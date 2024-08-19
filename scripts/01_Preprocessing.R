@@ -143,9 +143,6 @@ inspect_by_type("BRL", 15, 2165, 145, 185, 0.2, "above") # BRL: Check where mean
 
 
 # LOF outliers detector
-df <- spec_df
-scan_type <- "BRL"
-
 detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
   # Define types
   scan_types <- levels(as.factor(df$type))
@@ -174,6 +171,13 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
       print("You have single scan outliers:")
       print(paste0(single_outliers$planting_location, " scan: ", single_outliers$sample_name))
       
+      # plot
+      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
+           main = paste0(ss, " ", scan_type))
+      plot(as_spectra(subset(single_outliers, select = `350`:`2500`)), 
+           col = "red", add = TRUE)
+      legend(x = "topright", legend = single_outliers$planting_location, title = "Single Scan Outliers")
+      
       # set all nm values of that single scan to NA
       df <- df |>
         mutate(across(`350`:`2500`,
@@ -185,7 +189,7 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
     }
     
     
-    # if more than one scan per plant is outlier: set all nm values for all scans for this plant to NA (eg B7, A20)
+    # if more than one scan per plant is outlier: set all nm values for all scans for this plant to NA
     mult_outliers <- lof_outliers |>
       group_by(planting_location) |>
       filter(n() > 1)
@@ -194,6 +198,15 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
       print("You have multiple scan outliers:")
       print(paste0(mult_outliers$planting_location, " scan: ", mult_outliers$sample_name))
       
+      # plot
+      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
+           main = paste0(ss, " ", scan_type))
+      plot(as_spectra(subset(mult_outliers, select = `350`:`2500`)), 
+           col = "red", add = TRUE)
+      legend(x = "topright", legend = paste0(mult_outliers$planting_location, " ", mult_outliers$sample_name), 
+             title = "Multi Scan Outliers")
+      
+      # Set all 20 scans for that plant to NA
       df <- df |>
         mutate(across(`350`:`2500`,
                       ~ ifelse(planting_location %in% mult_outliers$planting_location, NA, .)
@@ -208,17 +221,8 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
 }
 
 # Call the function
-outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 1.2, 5)
+outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
 
-
-plot(as_spectra(filter(spec_df, planting_location == "B_1")[, 15:2165]),
-     main = paste0(ss, " ", "B_1"))
-plot(as_spectra(filter(spec_df, sample_name == "at_pub_3_00035")[, 15:2165]), 
-       col = "red", add = TRUE)
-plot(as_spectra(filter(spec_df, sample_name %in% out)[, 15:2165]), 
-     col = "red", add = TRUE)
-
-out <- c("at_pub_1_00116", "at_pub_1_00117", "at_pub_1_00118", "at_pub_1_00119", "at_pub_1_00120")
 
 
 
