@@ -133,6 +133,20 @@ outlier_plants <- spec_df |>
 length(unique(outlier_plants$planting_location))
 # AT pub fine
 
+## BRL
+plot(as_spectra(filter(spec_df, type == "BRL")[, 15:2165])) # check no single line looks "substantially different"
+# AT pub fine
+
+# check where mean from 480 nm - 520 nm is above 0.2
+outlier_plants <- spec_df |>
+  filter(type == "BRL") |>
+  rowwise() |>
+  mutate(mean = mean(c_across(145:185))) |> # values from 480 nm - 520 nm
+  filter(mean > 0.2) |>
+  ungroup() |>
+  select(planting_location, sample_name, mean)
+
+length(unique(outlier_plants$planting_location))
 
 
 
