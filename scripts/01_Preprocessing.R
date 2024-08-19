@@ -86,53 +86,74 @@ for (i in seq_along(file_paths)) {
 
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
 # visually inspect the plots of different measurement types
-
-inspect_by_type <- function(type, plot_range_min, plot_range_max, check_range_min, check_range_max, mean_threshold, filter_condition = "below") {
-  # Calculate the mean and filter based on the threshold condition
-  if (filter_condition == "below") {
-    outlier_plants <- spec_df |>
-      filter(type == !!type) |>
+inspect_by_type <- function(df) {
+  # Define scan types
+  scan_types <- levels(as.factor(df$type))
+  
+  # Conditions for each scan type
+  conditions <- data.frame(scan_types = scan_types, 
+                           threshold = c(0.1, 0.2, 0.9, 0.4), 
+                           operator = c("greater", "greater", "smaller", "greater"),
+                           mean_range_min = c(350, 480, 350, 480),
+                           mean_range_max = c(2500, 520, 2500, 520))
+  
+  # Loop through scan types
+  for (scan_type in scan_types) {
+    print(paste0("Processing: ", ss, " ", scan_type))
+    
+    # Retrieve conditions for the current scan type                    
+    threshold <- conditions$threshold[conditions$scan_types == scan_type]
+    operator <- conditions$operator[conditions$scan_types == scan_type]
+    mean_range_min <- as.character(conditions$mean_range_min[conditions$scan_types == scan_type])
+    mean_range_max <- as.character(conditions$mean_range_max[conditions$scan_types == scan_type])
+    
+    # Filter the data by type
+    spec_by_type <- df |>
+      filter(type == scan_type)
+    
+    # Calculate mean for the specified range
+    mean_by_type <- spec_by_type |>
       rowwise() |>
-      mutate(mean = mean(c_across(all_of(check_range_min:check_range_max)))) |>
-      filter(mean < mean_threshold) |>
-      ungroup() |>
-      select(planting_location, sample_name, mean)
-  } else {
-    outlier_plants <- spec_df |>
-      filter(type == !!type) |>
-      rowwise() |>
-      mutate(mean = mean(c_across(all_of(check_range_min:check_range_max)))) |>
-      filter(mean > mean_threshold) |>
-      ungroup() |>
-      select(planting_location, sample_name, mean)
-  }
-
-  # Plot the spectra for the specific type (WR, WRL, BR, BRL)
-  plot(as_spectra(filter(spec_df, type == !!type)[, 15:2165]),
-       main = paste0(ss, " ", type))
-if (nrow(outlier_plants) > 0) {
-    plot(as_spectra(filter(spec_df, type == !!type & planting_location %in% outlier_plants$planting_location)[, plot_range_min:plot_range_max]), 
-         col = "red", add = TRUE)
+      mutate(mean = mean(c_across(all_of(mean_range_min):all_of(mean_range_max))), .before = `350`) |>
+      ungroup()
+    
+    # Identify outliers based on the operator condition
+    if (operator == "greater") {
+      outliers <- mean_by_type |>
+        filter(mean > threshold)
+    } else {
+      outliers <- mean_by_type |>
+        filter(mean < threshold)
+    }
+    
+    # Plot the spectra for the specific type
+    plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
+         main = paste0(ss, " ", scan_type))
+    # If outliers are detected, plot them in red
+    if (nrow(outliers) > 0) {
+      plot(as_spectra(subset(outliers, select = `350`:`2500`)), 
+           col = "red", add = TRUE)
+      legend("topright", legend = outliers$planting_location, title = "Outliers")
+      
+      print(paste0("You have outliers for ", ss, " ", scan_type))
+      print(unique(outliers$planting_location))
+      
+      # Set outliers to NA in the main df
+      df <- df |>
+        mutate(across(`350`:`2500`, 
+                      ~ ifelse(planting_location %in% outliers$planting_location, NA, .)))
+      
+    } else {
+      print(paste0("No outliers for ", ss, " ", scan_type))
+    }
   }
   
-  # Print the number of unique planting locations
-  num_unique_locations <- length(unique(outlier_plants$planting_location))
-
-  if (num_unique_locations > 0) {
-    print(paste0("You have outliers for ", ss, " ", type))
-    print(unique(outlier_plants$planting_location))
-  } else {
-    print(paste0("No outliers for ", ss, " ", type))
-  }
+  # Return modified dataframe
+  return(df)
 }
 
-# Call the function for each type
-inspect_by_type("WR", 15, 2165, 15, 2165, 0.9, "below") # WR: Check where mean is below 0.9
-inspect_by_type("WRL", 15, 2165, 145, 185, 0.4, "above") # WRL: Check where mean is above 0.4 (480 nm - 520 nm) - I added this myself
-inspect_by_type("BR", 15, 2165, 15, 2165, 0.1, "above") # BR: Check where mean is above 0.1
-inspect_by_type("BRL", 15, 2165, 145, 185, 0.2, "above") # BRL: Check where mean is above 0.2 (480 nm - 520 nm) - I added this myself
-
-
+# call
+vis_outlier_rm <- inspect_by_type(spec_df)
 
 
 #### OUTLIER DETECTION 2: LOF ####
@@ -221,7 +242,7 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
 }
 
 # Call the function
-outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
+lof_outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
 
 
 
