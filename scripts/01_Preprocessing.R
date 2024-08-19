@@ -1,7 +1,8 @@
 ### This script is part of the Leaf Optical Properties Paper from the ACORN project.
-### This script imports the raw data of spectral measurements, adds metadata, checks for outliers, calculates uncertainties and reflectance.
+### This script imports the raw data of spectral measurements, adds metadata,
+### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-08-16
+### Last Update 2024-08-19
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -18,10 +19,12 @@ library(conflicted)
 
 # check and resolve conflicts
 conflict_scout()
-conflicts_prefer(dplyr::filter, 
-                 dplyr::lag, 
-                 spectrolab::smooth, 
-                 spectrolab::combine)
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::lag,
+  spectrolab::smooth,
+  spectrolab::combine
+)
 
 # define directory paths
 res.path1 <- "/output/"
@@ -57,23 +60,24 @@ spec_df <- data.frame()
 # import spectral measurement and merge with metadata
 # Loop through each folder within the file paths
 for (i in seq_along(file_paths)) {
-  
   # Load spectral measurements
   spectra <- read_spectra(path = file_paths[i])
 
   # Load metadata
   meta <- read.csv(paste0(getwd(), dat.path1, ss, "/", meta_files[i]))
-  
+
   # Create a table for merging spectra with measurement type
-  mmt <- tibble(type = rep(c("WR", "WRL", "BR", "BRL"), each = 5, times = nrow(meta)),
-                planting_location = rep(meta$planting_location, each = 20))
-  
-  # Merge with spectra 
+  mmt <- tibble(
+    type = rep(c("WR", "WRL", "BR", "BRL"), each = 5, times = nrow(meta)),
+    planting_location = rep(meta$planting_location, each = 20)
+  )
+
+  # Merge with spectra
   spectra_mmt <- cbind(mmt, spectra)
 
   # Merge with metadata, make sure species matches, because planting location in Austria is not unique
-  spectra_mmt_meta = right_join(metadata[metadata$species == species, ], spectra_mmt, by = "planting_location")
-  
+  spectra_mmt_meta <- right_join(metadata[metadata$species == species, ], spectra_mmt, by = "planting_location")
+
   # Store data in df
   spec_df <- rbind(spec_df, spectra_mmt_meta) # Append the new data
 }
@@ -83,7 +87,7 @@ for (i in seq_along(file_paths)) {
 # visually inspect the plots of different measurement types
 
 # WR
-plot(as_spectra(filter(spec_df,type == "WR")[,15:2165])) # check no single line looks "substantially different"
+plot(as_spectra(filter(spec_df, type == "WR")[, 15:2165])) # check no single line looks "substantially different"
 
 # check where mean is below 0.9
 outlier_plants <- spec_df |>
@@ -125,6 +129,7 @@ length(outlier_plants$planting_location)
 # processed_data_list[[i]] <- CR_current_meta
 
 ### NEXT TIME ###
-# tidy up import function. 
-# run outlier functions
+# outlier functions: for all mmt types
+# add LOF
+# run on all data subsets.
 # then calculate reflectance and uncertainties
