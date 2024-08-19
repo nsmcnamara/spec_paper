@@ -86,67 +86,53 @@ for (i in seq_along(file_paths)) {
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
 # visually inspect the plots of different measurement types
 
-## WR
-plot(as_spectra(filter(spec_df, type == "WR")[, 15:2165])) # check no single line looks "substantially different"
+analyze_spectra <- function(type, plot_range_min, plot_range_max, check_range_min, check_range_max, mean_threshold, filter_condition = "below") {
+  # Plot the spectra for the specific type (WR, WRL, BR, BRL)
+  plot(as_spectra(filter(spec_df, type == !!type)[, plot_range_min:plot_range_max]))
+  
+  # Calculate the mean and filter based on the threshold condition
+  if (filter_condition == "below") {
+    outlier_plants <- spec_df |>
+      filter(type == !!type) |>
+      rowwise() |>
+      mutate(mean = mean(c_across(all_of(check_range_min:check_range_max)))) |>
+      filter(mean < mean_threshold) |>
+      ungroup() |>
+      select(planting_location, sample_name, mean)
+  } else {
+    outlier_plants <- spec_df |>
+      filter(type == !!type) |>
+      rowwise() |>
+      mutate(mean = mean(c_across(all_of(check_range_min:check_range_max)))) |>
+      filter(mean > mean_threshold) |>
+      ungroup() |>
+      select(planting_location, sample_name, mean)
+  }
+  
+  # Print the number of unique planting locations
+  num_unique_locations <- length(unique(outlier_plants$planting_location))
+  
+  if (num_unique_locations > 0) {
+    print(paste0("You have outliers for ", type, " ", ss))
+    print(unique(outlier_plants$planting_location))
+  } else {
+    print(paste0("No outliers for ", type, " ", ss))
+  }
+}
 
-# check where mean is below 0.9
-outlier_plants <- spec_df |>
-  filter(type == "WR") |>
-  rowwise() |>
-  mutate(mean = mean(c_across(15:2165))) |>
-  filter(mean < 0.9) |>
-  ungroup() |>
-  select(planting_location, sample_name, mean)
+# Call the function for each type
+analyze_spectra("WR", 15, 2165, 15, 2165, 0.9, "below")  # WR: Check where mean is below 0.9
+analyze_spectra("WRL", 15, 2165, 145, 185, 0.4, "above") # WRL: Check where mean is above 0.4 (480 nm - 520 nm) - I added this myself
+analyze_spectra("BR", 15, 2165, 15, 2165, 0.1, "above")  # BR: Check where mean is above 0.1
+analyze_spectra("BRL", 15, 2165, 145, 185, 0.2, "above") # BRL: Check where mean is above 0.2 (480 nm - 520 nm) - I added this myself
 
-length(unique(outlier_plants$planting_location))
 
-# fine for AT_pubescens_2
 
-## WRL
-plot(as_spectra(filter(spec_df, type == "WRL")[, 15:2165])) # check no single line looks "substantially different"
-# AT pub there is one
 
-# check where mean from 480 nm - 520 nm is above 0.4
-outlier_plants <- spec_df |>
-  filter(type == "WRL") |>
-  rowwise() |>
-  mutate(mean = mean(c_across(145:185))) |> # values from 480 nm - 520 nm
-  filter(mean > 0.4) |>
-  ungroup() |>
-  select(planting_location, sample_name, mean)
 
-length(unique(outlier_plants$planting_location))
 
-## BR
-plot(as_spectra(filter(spec_df, type == "BR")[, 15:2165])) # check no single line looks "substantially different"
-# AT pub fine
 
-# check where mean is above 0.1
-outlier_plants <- spec_df |>
-  filter(type == "BR") |>
-  rowwise() |>
-  mutate(mean = mean(c_across(15:2165))) |> # values from 480 nm - 520 nm
-  filter(mean > 0.1) |>
-  ungroup() |>
-  select(planting_location, sample_name, mean)
 
-length(unique(outlier_plants$planting_location))
-# AT pub fine
-
-## BRL
-plot(as_spectra(filter(spec_df, type == "BRL")[, 15:2165])) # check no single line looks "substantially different"
-# AT pub fine
-
-# check where mean from 480 nm - 520 nm is above 0.2
-outlier_plants <- spec_df |>
-  filter(type == "BRL") |>
-  rowwise() |>
-  mutate(mean = mean(c_across(145:185))) |> # values from 480 nm - 520 nm
-  filter(mean > 0.2) |>
-  ungroup() |>
-  select(planting_location, sample_name, mean)
-
-length(unique(outlier_plants$planting_location))
 
 
 
