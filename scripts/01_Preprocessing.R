@@ -106,7 +106,7 @@ length(unique(outlier_plants$planting_location))
 plot(as_spectra(filter(spec_df, type == "WRL")[, 15:2165])) # check no single line looks "substantially different"
 # AT pub there is one
 
-# check where mean is below 0.9
+# check where mean from 480 nm - 520 nm is above 0.4
 outlier_plants <- spec_df |>
   filter(type == "WRL") |>
   rowwise() |>
@@ -116,6 +116,7 @@ outlier_plants <- spec_df |>
   select(planting_location, sample_name, mean)
 
 length(unique(outlier_plants$planting_location))
+
 
 
 
