@@ -86,7 +86,7 @@ for (i in seq_along(file_paths)) {
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
 # visually inspect the plots of different measurement types
 
-# WR
+## WR
 plot(as_spectra(filter(spec_df, type == "WR")[, 15:2165])) # check no single line looks "substantially different"
 
 # check where mean is below 0.9
@@ -98,9 +98,25 @@ outlier_plants <- spec_df |>
   ungroup() |>
   select(planting_location, sample_name, mean)
 
-length(outlier_plants$planting_location)
+length(unique(outlier_plants$planting_location))
 
 # fine for AT_pubescens_2
+
+## WRL
+plot(as_spectra(filter(spec_df, type == "WRL")[, 15:2165])) # check no single line looks "substantially different"
+# AT pub there is one
+
+# check where mean is below 0.9
+outlier_plants <- spec_df |>
+  filter(type == "WRL") |>
+  rowwise() |>
+  mutate(mean = mean(c_across(145:185))) |> # values from 480 nm - 520 nm
+  filter(mean > 0.4) |>
+  ungroup() |>
+  select(planting_location, sample_name, mean)
+
+length(unique(outlier_plants$planting_location))
+
 
 
 
