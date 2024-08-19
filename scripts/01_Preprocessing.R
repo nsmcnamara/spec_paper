@@ -11,11 +11,13 @@
 # install_github("meireles/spectrolab")
 # install.packages("tidyverse")
 # install.packages("conflicted")
+# install.packages("DescTools")
 
 # load libraries
 library(spectrolab)
 library(tidyverse)
 library(conflicted)
+library(DescTools)
 
 # check and resolve conflicts
 conflict_scout()
@@ -31,7 +33,6 @@ res.path1 <- "/output/"
 dat.path1 <- "/data/raw/"
 
 # load functions
-# source("source/rdadapt.R")
 
 # select data subset
 ss <- "AT_pubescens_2"
@@ -87,9 +88,6 @@ for (i in seq_along(file_paths)) {
 # visually inspect the plots of different measurement types
 
 inspect_by_type <- function(type, plot_range_min, plot_range_max, check_range_min, check_range_max, mean_threshold, filter_condition = "below") {
-  # Plot the spectra for the specific type (WR, WRL, BR, BRL)
-  plot(as_spectra(filter(spec_df, type == !!type)[, plot_range_min:plot_range_max]))
-
   # Calculate the mean and filter based on the threshold condition
   if (filter_condition == "below") {
     outlier_plants <- spec_df |>
@@ -109,14 +107,22 @@ inspect_by_type <- function(type, plot_range_min, plot_range_max, check_range_mi
       select(planting_location, sample_name, mean)
   }
 
+  # Plot the spectra for the specific type (WR, WRL, BR, BRL)
+  plot(as_spectra(filter(spec_df, type == !!type)[, 15:2165]),
+       main = paste0(ss, " ", type))
+if (nrow(outlier_plants) > 0) {
+    plot(as_spectra(filter(spec_df, type == !!type & planting_location %in% outlier_plants$planting_location)[, plot_range_min:plot_range_max]), 
+         col = "red", add = TRUE)
+  }
+  
   # Print the number of unique planting locations
   num_unique_locations <- length(unique(outlier_plants$planting_location))
 
   if (num_unique_locations > 0) {
-    print(paste0("You have outliers for ", type, " ", ss))
+    print(paste0("You have outliers for ", ss, " ", type))
     print(unique(outlier_plants$planting_location))
   } else {
-    print(paste0("No outliers for ", type, " ", ss))
+    print(paste0("No outliers for ", ss, " ", type))
   }
 }
 
@@ -129,7 +135,157 @@ inspect_by_type("BRL", 15, 2165, 145, 185, 0.2, "above") # BRL: Check where mean
 
 
 
+#### OUTLIER DETECTION 2: LOF ####
+## k: The kth-distance to be used to calculate the LOFs.
+## k 5 makes sense: always 5 measurements that should make a local cluster
+## this identifies if one or more scans are abnormally far apart from each other
+## irrespective of whether a single plant is just different from other plants
 
+
+# LOF outliers detector
+
+detect_lof_outliers <- function(df, spec_start_col, spec_end_col, lof_threshold = 1.2, k) {
+  # Define types
+  scan_types <- levels(as.factor(df$type))
+
+  for (scan_type in scan_types) {
+    print(paste0("Processing: ", ss, " ", scan_type))
+    
+    # Filter by type
+    spec_by_type <- df |>
+      filter(type == scan_type)
+    
+    # Calculate LOF scores and insert before column of 350nm
+    lof_by_type <- spec_by_type |>
+      mutate(lof_score = LOF(spec_by_type[, spec_start_col:spec_end_col], k = k), .before = "350")
+
+    # Identify outliers
+    lof_outliers <- lof_by_type |>
+      filter(lof_score > lof_threshold)
+
+    # if only one scan per plant is outlier: set all values of that scan to NA
+    lof_plant_locs_single <- lof_outliers |>
+      group_by(planting_location) |>
+      summarise(n = n()) |>
+      filter(n == 1)
+
+    df <- df |>
+      mutate(across(
+        `350`:`2500`,
+        ~ case_when(lof_by_type$lof_score > lof_threshold & planting_location %in% lof_plant_locs_single$planting_location ~ NA,
+          .default = as.numeric(.)
+        )
+      ))
+
+    if (length(lof_plant_locs_single$planting_location) > 0) {
+      print("You have single scan outliers:")
+      print(lof_by_type |>
+        filter(lof_score > lof_threshold) |>
+        filter(planting_location %in% lof_plant_locs_single$planting_location) |>
+        select(planting_location, acorn_id, sample_name))
+    } else {
+      print("You have no single scan outliers.")
+    }
+
+
+    # if more than one scan per plant is outlier: set all scans for this plant to NA (eg B7, A20)
+    lof_plant_locs_mult <- lof_outliers |>
+      group_by(planting_location) |>
+      summarise(n = n()) |>
+      filter(n > 1)
+
+    df <- df |>
+      mutate(across(
+        `350`:`2500`,
+        ~ case_when(planting_location %in% lof_plant_locs_mult$planting_location ~ NA,
+          .default = as.numeric(.)
+        )
+      ))
+
+    if (length(lof_plant_locs_mult$planting_location) > 0) {
+      print("You have multiple scan outliers:")
+      print(lof_by_type |>
+        filter(lof_score > lof_threshold) |>
+        filter(planting_location %in% lof_plant_locs_mult$planting_location) |>
+        select(planting_location, acorn_id, sample_name))
+    } else {
+      print("You have no multiple scan outliers.")
+    }
+  }
+  return(df)
+}
+
+
+
+outliers_rm <- detect_lof_outliers(spec_df, 15, 2165, lof_threshold = 1.2, 5)
+
+
+
+detect_lof_outliers <- function(df, spec_start_col, spec_end_col, lof_threshold = 1.2, k) {
+  # Define types
+  scan_types <- levels(as.factor(df$type))
+  
+  for (scan_type in scan_types) {
+    print(paste0("Processing: ", ss, " ", scan_type))
+    
+    # Filter by type
+    spec_by_type <- df |> filter(type == scan_type)
+    
+    # Calculate LOF scores and insert before column of 350nm
+    lof_by_type <- spec_by_type |>
+      mutate(lof_score = LOF(spec_by_type[, spec_start_col:spec_end_col], k = k), .before = "350")
+    
+    # Identify outliers
+    lof_outliers <- lof_by_type |> filter(lof_score > lof_threshold)
+    
+    # If only one scan per plant is an outlier: set all values of that scan to NA
+    lof_plant_locs_single <- lof_outliers |>
+      group_by(planting_location) |>
+      summarise(n = n()) |>
+      filter(n == 1)
+    
+    if (nrow(lof_plant_locs_single) > 0) {
+      df <- df |>
+        mutate(across(
+          all_of(`350`:`2500`),
+          ~ ifelse(planting_location %in% lof_plant_locs_single$planting_location, NA, .)
+        ))
+      
+      print("You have single scan outliers:")
+      print(lof_by_type |>
+              filter(planting_location %in% lof_plant_locs_single$planting_location) |>
+              select(planting_location, acorn_id, sample_name))
+    } else {
+      print("You have no single scan outliers.")
+    }
+    
+    # If more than one scan per plant is an outlier: set all scans for this plant to NA
+    lof_plant_locs_mult <- lof_outliers |>
+      group_by(planting_location) |>
+      summarise(n = n()) |>
+      filter(n > 1)
+    
+    if (nrow(lof_plant_locs_mult) > 0) {
+      df <- df |>
+        mutate(across(
+          all_of(`350`:`2500`),
+          ~ ifelse(planting_location %in% lof_plant_locs_mult$planting_location, NA, .)
+        ))
+      
+      print("You have multiple scan outliers:")
+      print(lof_by_type |>
+              filter(planting_location %in% lof_plant_locs_mult$planting_location) |>
+              select(planting_location, acorn_id, sample_name))
+    } else {
+      print("You have no multiple scan outliers.")
+    }
+  }
+  
+  return(df)
+}
+
+# Call the function
+outliers_rm <- detect_lof_outliers(spec_df, 15, 2165, lof_threshold = 1.2, 5)
 
 
 
