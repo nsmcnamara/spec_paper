@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-08-19
+### Last Update 2024-08-20
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -36,10 +36,10 @@ dat.path1 <- "/data/raw/"
 
 # select data subset
 ss <- "AT_pubescens_2"
-# ss <- "AT_robur_2"
-# ss <- "CH_pubescens_2"
-# ss <- "CH_robur_2"
-# ss <- "CH_robur_3"
+ss <- "AT_robur_2"
+ss <- "CH_pubescens_2"
+ss <- "CH_robur_2"
+ss <- "CH_robur_3"
 
 # select species
 species <- if_else(str_detect(ss, "pubescens"), "Q.pubescens", "Q.robur")
@@ -89,34 +89,36 @@ for (i in seq_along(file_paths)) {
 inspect_by_type <- function(df) {
   # Define scan types
   scan_types <- levels(as.factor(df$type))
-  
+
   # Conditions for each scan type
-  conditions <- data.frame(scan_types = scan_types, 
-                           threshold = c(0.1, 0.2, 0.9, 0.4), 
-                           operator = c("greater", "greater", "smaller", "greater"),
-                           mean_range_min = c(350, 480, 350, 480),
-                           mean_range_max = c(2500, 520, 2500, 520))
-  
+  conditions <- data.frame(
+    scan_types = scan_types,
+    threshold = c(0.1, 0.2, 0.9, 0.4),
+    operator = c("greater", "greater", "smaller", "greater"),
+    mean_range_min = c(350, 480, 350, 480),
+    mean_range_max = c(2500, 520, 2500, 520)
+  )
+
   # Loop through scan types
   for (scan_type in scan_types) {
     print(paste0("Processing: ", ss, " ", scan_type))
-    
-    # Retrieve conditions for the current scan type                    
+
+    # Retrieve conditions for the current scan type
     threshold <- conditions$threshold[conditions$scan_types == scan_type]
     operator <- conditions$operator[conditions$scan_types == scan_type]
     mean_range_min <- as.character(conditions$mean_range_min[conditions$scan_types == scan_type])
     mean_range_max <- as.character(conditions$mean_range_max[conditions$scan_types == scan_type])
-    
+
     # Filter the data by type
     spec_by_type <- df |>
       filter(type == scan_type)
-    
+
     # Calculate mean for the specified range
     mean_by_type <- spec_by_type |>
       rowwise() |>
       mutate(mean = mean(c_across(all_of(mean_range_min):all_of(mean_range_max))), .before = `350`) |>
       ungroup()
-    
+
     # Identify outliers based on the operator condition
     if (operator == "greater") {
       outliers <- mean_by_type |>
@@ -125,29 +127,32 @@ inspect_by_type <- function(df) {
       outliers <- mean_by_type |>
         filter(mean < threshold)
     }
-    
+
     # Plot the spectra for the specific type
     plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-         main = paste0(ss, " ", scan_type))
+      main = paste0(ss, " ", scan_type)
+    )
     # If outliers are detected, plot them in red
     if (nrow(outliers) > 0) {
-      plot(as_spectra(subset(outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
+      plot(as_spectra(subset(outliers, select = `350`:`2500`)),
+        col = "red", add = TRUE
+      )
       legend("topright", legend = outliers$planting_location, title = "Outliers")
-      
+
       print(paste0("You have outliers for ", ss, " ", scan_type))
       print(unique(outliers$planting_location))
-      
+
       # Set outliers to NA in the main df
       df <- df |>
-        mutate(across(`350`:`2500`, 
-                      ~ ifelse(planting_location %in% outliers$planting_location, NA, .)))
-      
+        mutate(across(
+          `350`:`2500`,
+          ~ ifelse(planting_location %in% outliers$planting_location, NA, .)
+        ))
     } else {
       print(paste0("No outliers for ", ss, " ", scan_type))
     }
   }
-  
+
   # Return modified dataframe
   return(df)
 }
@@ -155,6 +160,29 @@ inspect_by_type <- function(df) {
 # call
 vis_outlier_rm <- inspect_by_type(spec_df)
 
+# at pub: rm B20
+# at rob: all clear
+# ch pub: 8E3 too low around 1000 in BRL, manual rm:
+
+# ch rob 2: all clear
+# ch rob 3: check BRL high in 1000 but seems otherwise ok so leave it
+
+# manual check:
+# tst <- spec_df |>
+#   filter(type == "BRL")
+# plot(as_spectra(subset(tst, select = `350`:`2500`)),
+#      main = paste0(ss, " BRL ")
+# )
+# tst2 <- tst |>
+#   filter(`1000` > 0.55)
+# plot(as_spectra(subset(tst2, select = `350`:`2500`)),
+#      col = "red", add = TRUE
+# )
+# manual rm:
+# vis_outlier_rm <- vis_outlier_rm |>
+#   mutate(across(
+#     `350`:`2500`,
+#     ~ ifelse(planting_location == "8_E_3", NA, .)))
 
 #### OUTLIER DETECTION 2: LOF ####
 ## k: The kth-distance to be used to calculate the LOFs.
@@ -167,88 +195,100 @@ vis_outlier_rm <- inspect_by_type(spec_df)
 detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
   # Define types
   scan_types <- levels(as.factor(df$type))
-  
+
   for (scan_type in scan_types) {
     print(paste0("Processing: ", ss, " ", scan_type))
-    
+
     # Filter by type
     spec_by_type <- df |>
       filter(type == scan_type)
-    
+
     # Calculate LOF scores and insert before column of 350nm
     lof_by_type <- spec_by_type |>
       mutate(lof_score = LOF(subset(spec_by_type, select = `350`:`2500`), k = k), .before = "350")
-    
+
     # Identify outliers
     lof_outliers <- lof_by_type |>
       filter(lof_score > lof_threshold)
-    
+
     # if only one scan per plant is outlier: set all nm values of that single scan to NA
     single_outliers <- lof_outliers |>
       group_by(planting_location) |>
       filter(n() == 1)
-    
+
     if (nrow(single_outliers) > 0) {
       print("You have single scan outliers:")
       print(paste0(single_outliers$planting_location, " scan: ", single_outliers$sample_name))
-      
+
       # plot
       plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type))
-      plot(as_spectra(subset(single_outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
+        main = paste0(ss, " ", scan_type)
+      )
+      plot(as_spectra(subset(single_outliers, select = `350`:`2500`)),
+        col = "red", add = TRUE
+      )
       legend(x = "topright", legend = single_outliers$planting_location, title = "Single Scan Outliers")
-      
+
       # set all nm values of that single scan to NA
       df <- df |>
-        mutate(across(`350`:`2500`,
-                      ~ ifelse(sample_name %in% single_outliers$sample_name, NA, .)
+        mutate(across(
+          `350`:`2500`,
+          ~ ifelse(sample_name %in% single_outliers$sample_name, NA, .)
         ))
-      
     } else {
       print("You have no single scan outliers.")
     }
-    
-    
+
+
     # if more than one scan per plant is outlier: set all nm values for all scans for this plant to NA
     mult_outliers <- lof_outliers |>
       group_by(planting_location) |>
       filter(n() > 1)
-    
+
     if (nrow(mult_outliers) > 0) {
       print("You have multiple scan outliers:")
       print(paste0(mult_outliers$planting_location, " scan: ", mult_outliers$sample_name))
-      
+
       # plot
       plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type))
-      plot(as_spectra(subset(mult_outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
-      legend(x = "topright", legend = paste0(mult_outliers$planting_location, " ", mult_outliers$sample_name), 
-             title = "Multi Scan Outliers")
-      
+        main = paste0(ss, " ", scan_type)
+      )
+      plot(as_spectra(subset(mult_outliers, select = `350`:`2500`)),
+        col = "red", add = TRUE
+      )
+      legend(
+        x = "topright", legend = paste0(mult_outliers$planting_location, " ", mult_outliers$sample_name),
+        title = "Multi Scan Outliers"
+      )
+
       # Set all 20 scans for that plant to NA
       df <- df |>
-        mutate(across(`350`:`2500`,
-                      ~ ifelse(planting_location %in% mult_outliers$planting_location, NA, .)
+        mutate(across(
+          `350`:`2500`,
+          ~ ifelse(planting_location %in% mult_outliers$planting_location, NA, .)
         ))
-      
     } else {
       print("You have no multiple scan outliers.")
     }
   }
-  
+
   return(df)
 }
 
 # Call the function
-lof_outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
+lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 
-
-
-
-
-
+# man plotting 
+# tst <- vis_outlier_rm |>
+#   filter(type == "BR")
+# plot(as_spectra(subset(tst, select = `350`:`2500`)),
+#      main = paste0(ss, " BR ")
+# )
+# tst2 <- tst |>
+#   filter(planting_location == "38_G_2")
+# plot(as_spectra(subset(tst2, select = `350`:`2500`)),
+#      col = "red", add = TRUE
+# )
 
 # Create an empty matrix for Calculated Reflectance
 # CR_current <- matrix(NA, nrow = nrow(current_merged) / 20, ncol = ncol(current_merged) - 3, dimnames = NULL)
@@ -274,6 +314,4 @@ lof_outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
 # processed_data_list[[i]] <- CR_current_meta
 
 ### NEXT TIME ###
-# add LOF
-# run on all data subsets.
 # then calculate reflectance and uncertainties
