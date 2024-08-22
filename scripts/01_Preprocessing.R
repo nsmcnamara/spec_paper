@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-08-20
+### Last Update 2024-08-22
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -36,13 +36,19 @@ dat.path1 <- "/data/raw/"
 
 # select data subset
 ss <- "AT_pubescens_2"
-ss <- "AT_robur_2"
-ss <- "CH_pubescens_2"
-ss <- "CH_robur_2"
-ss <- "CH_robur_3"
+#ss <- "AT_robur_2"
+#ss <- "CH_pubescens_2"
+#ss <- "CH_robur_2"
+#ss <- "CH_robur_3"
 
 # select species
-species <- if_else(str_detect(ss, "pubescens"), "Q.pubescens", "Q.robur")
+if (str_detect(ss, "pubescens")) {
+  species <- "Q.pubescens"
+} else if (str_detect(ss, "Q.robur")) {
+  species <- "Q.robur"
+} else  {
+  print("Could not detect species")
+}
 
 
 #### DATA IMPORT ####
@@ -314,4 +320,10 @@ lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 # processed_data_list[[i]] <- CR_current_meta
 
 ### NEXT TIME ###
-# then calculate reflectance and uncertainties
+# trim
+# then calculate reflectance 
+# LOF part 3
+# and uncertainties
+
+# generate bib file
+knitr::write_bib(c(.packages()), "temp/packages.bib")
