@@ -39,17 +39,17 @@ source("source/detect_lof_outliers.R")
 
 # select data subset
 ss <- "AT_pubescens_2"
-#ss <- "AT_robur_2"
-#ss <- "CH_pubescens_2"
-#ss <- "CH_robur_2"
-#ss <- "CH_robur_3"
+# ss <- "AT_robur_2"
+# ss <- "CH_pubescens_2"
+# ss <- "CH_robur_2"
+# ss <- "CH_robur_3"
 
 # select species
 if (str_detect(ss, "pubescens")) {
   species <- "Q.pubescens"
-} else if (str_detect(ss, "Q.robur")) {
+} else if (str_detect(ss, "robur")) {
   species <- "Q.robur"
-} else  {
+} else {
   print("Could not detect species")
 }
 
@@ -130,7 +130,7 @@ vis_outlier_rm <- inspect_by_type(spec_df)
 # Call the function
 lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 
-# man plotting 
+# man plotting
 # tst <- vis_outlier_rm |>
 #   filter(type == "BR")
 # plot(as_spectra(subset(tst, select = `350`:`2500`)),
@@ -142,33 +142,50 @@ lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 #      col = "red", add = TRUE
 # )
 
-# Create an empty matrix for Calculated Reflectance
-# CR_current <- matrix(NA, nrow = nrow(current_merged) / 20, ncol = ncol(current_merged) - 3, dimnames = NULL)
+#### CALCULATE REFLECTANCE ####
 
-# n = 1
+# enter here the metadata columns for grouping WITHOUT the last (i.e. sample_name)
+metadata_cols <- colnames(lof_outliers_rm[1:13])
 
-# for (j in seq(1, nrow(current_merged), 20)) {
-#   for (k in 4:ncol(current_merged)) {
-#     WR = mean(current_merged[(j + 1):(j + 4), k])
-#     WRL = mean(current_merged[(j + 6):(j + 9), k])
-#     BR = mean(current_merged[(j + 11):(j + 14), k])
-#     BRL = mean(current_merged[(j + 16):(j + 19), k])
-#     CR_current[n, k - 3] = (BRL * WR - WRL * BR) / (WR - BR)
-#   }
-#   n = n + 1
-# }
+# calculate means of each measurement type for each plant (i.e., mean of 5 scans)
+mean_by_type <- lof_outliers_rm |>
+  # group by all metadata columns
+  group_by(across(metadata_cols)) |>
+  # caluculate mean for each of the wavelengths
+  summarise(across(`350`:`2500`, ~ mean(., na.rm = TRUE)))
 
+# calculate reflectance
+CR <- mean_by_type |>
+  # pivot data frame so each measurement has its own row
+  pivot_longer(
+    cols = `350`:`2500`,
+    names_to = "nm",
+    values_to = "val"
+  ) |>
+  # make nm as numeric so it will be ordered in descending
+  mutate(nm = as.numeric(nm)) |>
+  # pivot again so we have one row for each nm and can calculate reflectance per nm
+  pivot_wider(
+    names_from = type,
+    values_from = val
+  ) |>
+  # group by all metadata columns
+  group_by(common_garden, planting_location, nm) |>
+  # calculate reflectance
+  summarise(CR = (BRL * WR - WRL * BR) / (WR - BR), na.rm = TRUE) |>
+  # pivot again so each plant has one row
+  pivot_wider(
+    names_from = nm,
+    values_from = CR
+  )
+  
+ 
 
-# # Rename column names
-# colnames(CR_current_meta)[14:2164] <- 350:2500
-
-# # Store processed data frame in the list
-# processed_data_list[[i]] <- CR_current_meta
 
 ### NEXT TIME ###
 # trim
-# then calculate reflectance 
-# LOF part 3
+# then calculate reflectance
+# outlier part 3
 # and uncertainties
 
 # generate bib file
