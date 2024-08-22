@@ -172,19 +172,21 @@ CR <- mean_by_type |>
   # group by all metadata columns
   group_by(common_garden, planting_location, nm) |>
   # calculate reflectance
-  summarise(CR = (BRL * WR - WRL * BR) / (WR - BR), na.rm = TRUE) |>
+  summarise(CR = (BRL * WR - WRL * BR) / (WR - BR)) |>
   # pivot again so each plant has one row
   pivot_wider(
     names_from = nm,
     values_from = CR
-  )
+  ) |>
+  ungroup() |>
+  # replace NaN with NA
+  mutate_all(~ifelse(is.nan(.), NA, .))
   
  
 
 
 ### NEXT TIME ###
 # trim
-# then calculate reflectance
 # outlier part 3
 # and uncertainties
 
