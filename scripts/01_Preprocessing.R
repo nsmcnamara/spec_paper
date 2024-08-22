@@ -183,10 +183,12 @@ CR <- mean_by_type |>
   mutate_all(~ifelse(is.nan(.), NA, .))
   
  
+#### TRIM ####
+CR_trim <- CR |>
+  select(-c(`350`:`400`))
 
 
 ### NEXT TIME ###
-# trim
 # outlier part 3
 # and uncertainties
 
