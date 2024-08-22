@@ -144,13 +144,13 @@ lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 
 #### CALCULATE REFLECTANCE ####
 
-# enter here the metadata columns for grouping WITHOUT the last (i.e. sample_name)
-metadata_cols <- colnames(lof_outliers_rm[1:13])
+# enter here the metadata columns for grouping WITHOUT type and sample name
+metadata_cols <- colnames(lof_outliers_rm[1:12])
 
 # calculate means of each measurement type for each plant (i.e., mean of 5 scans)
 mean_by_type <- lof_outliers_rm |>
   # group by all metadata columns
-  group_by(across(metadata_cols)) |>
+  group_by(across(c(metadata_cols, type))) |>
   # caluculate mean for each of the wavelengths
   summarise(across(`350`:`2500`, ~ mean(., na.rm = TRUE)))
 
@@ -170,7 +170,7 @@ CR <- mean_by_type |>
     values_from = val
   ) |>
   # group by all metadata columns
-  group_by(common_garden, planting_location, nm) |>
+  group_by(across(c(metadata_cols, nm))) |>
   # calculate reflectance
   summarise(CR = (BRL * WR - WRL * BR) / (WR - BR)) |>
   # pivot again so each plant has one row
@@ -187,9 +187,66 @@ CR <- mean_by_type |>
 CR_trim <- CR |>
   select(-c(`350`:`400`))
 
+#### OUTLIER DETECTION 3: VISUAL INSPECTION OF CR ####
+inspect_CR
 
-### NEXT TIME ###
-# outlier part 3
+
+
+boxplot(CR_trim_temp$mean)
+
+inspect_CR <- function(df) {
+  
+    # Calculate mean across the trimmed spectrum
+    CR_trim_mean <- CR_trim |>
+      rowwise() |>
+      mutate(mean = mean(c_across(`401`:`2500`)), .before = `401`)
+    
+    # Identify outliers 
+      outliers_above <- CR_trim_mean |>
+        filter(mean > 0.31)
+      outliers_below <- CR_trim_mean |>
+        filter(mean < 0.24)
+    
+    outliers <- rbind(outliers_above, outliers_below)
+    
+    # Plot the spectra for the specific type
+    plot(as_spectra(subset(df, select = `401`:`2500`)),
+         main = paste0(ss)
+    )
+   
+    # If outliers are detected, plot them in red
+    if (nrow(outliers) > 0) {
+      plot(as_spectra(subset(outliers, select = `401`:`2500`)),
+           col = "red", add = TRUE
+      )
+      legend("topright", legend = outliers$planting_location, title = "Outliers")
+
+      print(paste0("You have potential outliers for ", ss))
+      print(unique(outliers$planting_location))
+
+
+   }
+  
+  # Return modified dataframe
+  return(df)
+}
+
+inspect_CR(CR_trim)
+
+#   # Set outliers to NA in the main df
+#   df <- df |>
+#     mutate(across(
+#       `350`:`2500`,
+#       ~ ifelse(planting_location %in% outliers$planting_location, NA, .)
+#     ))
+# } else {
+#   print(paste0("No outliers for ", ss, " ", scan_type))
+# }
+
+
+
+
+### NEXT TIME ####
 # and uncertainties
 
 # generate bib file
