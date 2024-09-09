@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-08-22
+### Last Update 2024-09-09
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -119,7 +119,7 @@ vis_outlier_rm <- inspect_by_type(spec_df)
 # vis_outlier_rm <- vis_outlier_rm |>
 #   mutate(across(
 #     `350`:`2500`,
-#     ~ ifelse(planting_location == "8_E_3", NA, .)))
+#     ~ ifelse(planting_location == "B_20", NA, .)))
 
 #### OUTLIER DETECTION 2: LOF ####
 ## k: The kth-distance to be used to calculate the LOFs.
@@ -188,11 +188,6 @@ CR_trim <- CR |>
   select(-c(`350`:`400`))
 
 #### OUTLIER DETECTION 3: VISUAL INSPECTION OF CR ####
-inspect_CR
-
-
-
-boxplot(CR_trim_temp$mean)
 
 inspect_CR <- function(df) {
   
@@ -233,6 +228,7 @@ inspect_CR <- function(df) {
 
 inspect_CR(CR_trim)
 
+
 #   # Set outliers to NA in the main df
 #   df <- df |>
 #     mutate(across(
@@ -247,7 +243,85 @@ inspect_CR(CR_trim)
 
 
 ### NEXT TIME ####
-# and uncertainties
+# Uncertainties: https://www.sciencedirect.com/science/article/pii/S0034425721003217
+# 
+# The measurement uncertainty, hereafter, corresponds to the combined uncertainty associated 
+# with the reflectance and calculated according to the law of propagation of uncertainties. 
+# The absolute measurement uncertainty (Eq. (3)) equals the standard uncertainties (Uxi) of 
+# the different readings involved in the reflectance calculation weighted by the corresponding 
+# coefficients of sensitivity (cxi) and added in quadrature. The standard uncertainty was defined 
+# as the standard deviation of the reading (STDxi) divided by the square root of the number of 
+# readings (N). The coefficient of sensitivity corresponds to the partial derivative of the 
+# reflectance with respect to the reading (xi) and describes how much the reflectance changes 
+# when the reading xi changes. Except for the two measurements including the target (i.e., the 
+# measured leaf or fabric), the uncertainties associated with each reading do not correlate with 
+# each other in any of the datasets (Figs. S3–6). Consequently, co-variation terms were neglected 
+# in the uncertainty calculation.
+# 
+# The relative measurement uncertainty was defined as the absolute uncertainty divided by 
+# the mean reflectance of the material (or across the dataset, for leaf measurements) with units 
+# of per cent (Eq. (4)).
+# 
+# Absolute measurement uncertainty:(3)
+# 
+# where UR,abs is the absolute uncertainty associated with the target reflectance.
+# R is the spectral reflectance of the target.xi are the readings (leaf clip; Rw, Tw, Rb, Tb; 
+# integrating sphere: Ir, Is, Id).Uxi is the standard uncertainty associated with the reading xi.
+# STDxi is the standard deviation among scans of each reading xi.N is the number of scans per reading.
+# 
+# Relative measurement uncertainty:(4)
+# 
+# where UR,rel is the relative uncertainty associated with the target reflectance.UR,abs is the absolute uncertainty associated with the target reflectance.R is the spectral reflectance of the target.
+# 
+# The standard uncertainty of each reading corresponds to the probability distributions associated with all different sources of uncertainty, including the instrument characteristics and experimental conditions. The contribution of individual sources of uncertainty was not considered in our uncertainty calculation, except for the ambient temperature (see 2.6).
+
+# Step 1: Calculate standard uncertainty for each reading Uxi
+# with Uxi = STDxi/rad(N), 
+# where STDxi is the standard deviation among scans of each reading 
+# and N is the number of scans per reading
+
+
+
+# enter here the metadata columns for grouping WITHOUT type and sample name
+metadata_cols <- colnames(lof_outliers_rm[1:12])
+
+# calculate means of each measurement type for each plant (i.e., mean of 5 scans)
+
+std_by_type <- lof_outliers_rm |>
+  # pivot data frame so each measurement has its own row
+  pivot_longer(
+    cols = `350`:`2500`,
+    names_to = "nm",
+    values_to = "val"
+  ) |>
+  # make nm as numeric so it will be ordered in descending
+  mutate(nm = as.numeric(nm)) |>
+  # group by all metadata columns
+  group_by(across(c(metadata_cols, type, nm))) |>
+  # add n_scans = number of scans per reading kept after outliers
+  summarise(n_scans = n(),
+              mean = mean(val, na.rm = TRUE),
+              sd = sd(val, na.rm = TRUE)
+  ) |>
+  # pivot again so we have one row for each nm and can calculate AU per nm
+  pivot_wider(
+  names_from = type,
+  values_from = c(mean, sd)
+  ) |>
+  group_by(across(c(metadata_cols, nm))) |>
+  # calculate AU
+  
+  #### NO: have to calculate Uxi first, bc it may vary (BR = 4 scans, BRL = 5 scans, if outlier removed)
+  mutate(AU = sqrt((mean_BR * (mean_WRL - mean_BRL) / (mean_WR -mean_BR)^2)^2 * (sd_WR/n_scans)^2 + (BR/(WR-BR))^2 * (STD_WRL/2)^2 + (WR*(WRL-BRL)/(WR-BR)^2)^2 * (STD_BR/2)^2 + (WR/(WR-BR))^2 * (STD_BRL/2)^2))
+  
+
+  # replace NaN with NA
+  mutate_all(~ifelse(is.nan(.), NA, .))
+
+
+
+
+
 
 # generate bib file
 knitr::write_bib(c(.packages()), "temp/packages.bib")
