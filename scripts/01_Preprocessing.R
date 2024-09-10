@@ -245,18 +245,6 @@ inspect_CR(CR_trim)
 ### NEXT TIME ####
 # Uncertainties: https://www.sciencedirect.com/science/article/pii/S0034425721003217
 # 
-# The measurement uncertainty, hereafter, corresponds to the combined uncertainty associated 
-# with the reflectance and calculated according to the law of propagation of uncertainties. 
-# The absolute measurement uncertainty (Eq. (3)) equals the standard uncertainties (Uxi) of 
-# the different readings involved in the reflectance calculation weighted by the corresponding 
-# coefficients of sensitivity (cxi) and added in quadrature. The standard uncertainty was defined 
-# as the standard deviation of the reading (STDxi) divided by the square root of the number of 
-# readings (N). The coefficient of sensitivity corresponds to the partial derivative of the 
-# reflectance with respect to the reading (xi) and describes how much the reflectance changes 
-# when the reading xi changes. Except for the two measurements including the target (i.e., the 
-# measured leaf or fabric), the uncertainties associated with each reading do not correlate with 
-# each other in any of the datasets (Figs. S3–6). Consequently, co-variation terms were neglected 
-# in the uncertainty calculation.
 # 
 # The relative measurement uncertainty was defined as the absolute uncertainty divided by 
 # the mean reflectance of the material (or across the dataset, for leaf measurements) with units 
@@ -298,25 +286,45 @@ std_by_type <- lof_outliers_rm |>
   mutate(nm = as.numeric(nm)) |>
   # group by all metadata columns
   group_by(across(c(metadata_cols, type, nm))) |>
-  # add n_scans = number of scans per reading kept after outliers
+  # add n_scans = number of scans per reading kept after outliers and calculate sd and standard uncertainty (uxi)
   summarise(n_scans = n(),
               mean = mean(val, na.rm = TRUE),
-              sd = sd(val, na.rm = TRUE)
+              sd = sd(val, na.rm = TRUE),
+            uxi = sd/n_scans,
   ) |>
   # pivot again so we have one row for each nm and can calculate AU per nm
   pivot_wider(
   names_from = type,
-  values_from = c(mean, sd)
+  values_from = c(mean, sd, uxi)
   ) |>
   group_by(across(c(metadata_cols, nm))) |>
+  # calculate CR
+  mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
   # calculate AU
-  
-  #### NO: have to calculate Uxi first, bc it may vary (BR = 4 scans, BRL = 5 scans, if outlier removed)
-  mutate(AU = sqrt((mean_BR * (mean_WRL - mean_BRL) / (mean_WR -mean_BR)^2)^2 * (sd_WR/n_scans)^2 + (BR/(WR-BR))^2 * (STD_WRL/2)^2 + (WR*(WRL-BRL)/(WR-BR)^2)^2 * (STD_BR/2)^2 + (WR/(WR-BR))^2 * (STD_BRL/2)^2))
-  
-
+  mutate(AU = (sqrt(CR/mean_BRL) * uxi_BRL^2) + 
+  (sqrt(CR/mean_BR) * uxi_BR^2) + 
+  (sqrt(CR/mean_WRL) * uxi_WRL^2) + 
+  (sqrt(CR/mean_WR) * uxi_WR^2)) |>
+  # select 
+  select(c(metadata_cols, nm, CR, AU)) |>
+  ungroup() |>
   # replace NaN with NA
   mutate_all(~ifelse(is.nan(.), NA, .))
+
+CR <- std_by_type |>
+  select(c(metadata_cols, nm, CR)) |>
+  # pivot
+  pivot_wider(
+    names_from = nm,
+    values_from = CR
+  )
+  
+AU <- std_by_type |>
+  select(c(metadata_cols, nm, AU)) |>
+  pivot_wider(
+    names_from = nm,
+    values_from = AU
+  )
 
 
 
