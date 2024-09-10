@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-09-09
+### Last Update 2024-09-10
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -148,14 +148,8 @@ lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
 metadata_cols <- colnames(lof_outliers_rm[1:12])
 
 # calculate means of each measurement type for each plant (i.e., mean of 5 scans)
-mean_by_type <- lof_outliers_rm |>
-  # group by all metadata columns
-  group_by(across(c(metadata_cols, type))) |>
-  # caluculate mean for each of the wavelengths
-  summarise(across(`350`:`2500`, ~ mean(., na.rm = TRUE)))
 
-# calculate reflectance
-CR <- mean_by_type |>
+std_by_type <- lof_outliers_rm |>
   # pivot data frame so each measurement has its own row
   pivot_longer(
     cols = `350`:`2500`,
@@ -164,28 +158,70 @@ CR <- mean_by_type |>
   ) |>
   # make nm as numeric so it will be ordered in descending
   mutate(nm = as.numeric(nm)) |>
-  # pivot again so we have one row for each nm and can calculate reflectance per nm
+  # group by all metadata columns
+  group_by(across(c(metadata_cols, type, nm))) |>
+  # add n_scans = number of scans per reading kept after outliers and calculate sd and standard uncertainty (uxi)
+  summarise(n_scans = n(),
+            mean = mean(val, na.rm = TRUE),
+            sd = sd(val, na.rm = TRUE),
+            uxi = sd/n_scans,
+  ) |>
+  # pivot again so we have one row for each nm and can calculate AU per nm
   pivot_wider(
     names_from = type,
-    values_from = val
+    values_from = c(mean, sd, uxi)
   ) |>
-  # group by all metadata columns
   group_by(across(c(metadata_cols, nm))) |>
-  # calculate reflectance
-  summarise(CR = (BRL * WR - WRL * BR) / (WR - BR)) |>
-  # pivot again so each plant has one row
-  pivot_wider(
-    names_from = nm,
-    values_from = CR
-  ) |>
+  # calculate CR
+  mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
+  # calculate AU
+  mutate(AU = (sqrt(CR/mean_BRL) * uxi_BRL^2) + 
+           (sqrt(CR/mean_BR) * uxi_BR^2) + 
+           (sqrt(CR/mean_WRL) * uxi_WRL^2) + 
+           (sqrt(CR/mean_WR) * uxi_WR^2)) |>
+  # select 
+  select(c(metadata_cols, nm, CR, AU)) |>
   ungroup() |>
   # replace NaN with NA
   mutate_all(~ifelse(is.nan(.), NA, .))
+
+# make df w Reflectance
+CR <- std_by_type |>
+  select(c(metadata_cols, nm, CR)) |>
+  # pivot
+  pivot_wider(
+    names_from = nm,
+    values_from = CR
+  )
+
+# make df w Absolute Uncertainties
+AU <- std_by_type |>
+  select(c(metadata_cols, nm, AU)) |>
+  pivot_wider(
+    names_from = nm,
+    values_from = AU
+  )
+
+
   
  
 #### TRIM ####
 CR_trim <- CR |>
-  select(-c(`350`:`400`))
+  select(-c(`350`:`400`)) |>
+  mutate(feat = "CR", .before = `401`)
+
+AU_trim <- AU |>
+  select(-c(`350`:`400`)) |>
+  mutate(feat = "AU", .before = `401`)
+
+CRAU <- rbind(CR_trim, AU_trim)
+
+# plot(as_spectra(subset(AU_trim, select = `401`:`2500`)),
+#      main = paste0(ss),
+#      ylim = c(0, 0.0005)
+# )
+# abline(h = 0.0001, col = "red")
+
 
 #### OUTLIER DETECTION 3: VISUAL INSPECTION OF CR ####
 
@@ -229,6 +265,50 @@ inspect_CR <- function(df) {
 inspect_CR(CR_trim)
 
 
+
+inspect_AU <- function(df) {
+  
+  # Calculate mean across the trimmed spectrum
+  AU_trim_mean <- AU_trim |>
+    rowwise() |>
+    mutate(mean = mean(c_across(`401`:`2500`)), .before = `401`)
+  
+  # Identify outliers 
+  outliers_ind <- AU_trim |>
+    rowwise() |>
+    filter(any(c_across(`401`:`2500`) > 0.0001)) |>
+    ungroup()
+  outliers_tot <- AU_trim_mean |>
+    filter(mean > 0.0001)
+  
+  outliers <- rbind(outliers_ind, outliers_tot)
+  
+  # Plot the spectra for the specific type
+  plot(as_spectra(subset(df, select = `401`:`2500`)),
+       main = paste0(ss),
+       ylim = c(0, 0.0005)
+  )
+  abline(h = 0.0001, col = "red")
+  
+  # If outliers are detected, plot them in red
+  if (nrow(outliers) > 0) {
+    plot(as_spectra(subset(outliers, select = `401`:`2500`)),
+         col = "red", add = TRUE
+    )
+    legend("topright", legend = outliers$planting_location, title = "Outliers")
+    
+    print(paste0("You have potential outliers for ", ss))
+    print(unique(outliers$planting_location))
+    
+    
+  }
+  
+  # Return modified dataframe
+  return(df)
+}
+
+inspect_AU(AU_trim)
+
 #   # Set outliers to NA in the main df
 #   df <- df |>
 #     mutate(across(
@@ -243,88 +323,7 @@ inspect_CR(CR_trim)
 
 
 ### NEXT TIME ####
-# Uncertainties: https://www.sciencedirect.com/science/article/pii/S0034425721003217
-# 
-# 
-# The relative measurement uncertainty was defined as the absolute uncertainty divided by 
-# the mean reflectance of the material (or across the dataset, for leaf measurements) with units 
-# of per cent (Eq. (4)).
-# 
-# Absolute measurement uncertainty:(3)
-# 
-# where UR,abs is the absolute uncertainty associated with the target reflectance.
-# R is the spectral reflectance of the target.xi are the readings (leaf clip; Rw, Tw, Rb, Tb; 
-# integrating sphere: Ir, Is, Id).Uxi is the standard uncertainty associated with the reading xi.
-# STDxi is the standard deviation among scans of each reading xi.N is the number of scans per reading.
-# 
-# Relative measurement uncertainty:(4)
-# 
-# where UR,rel is the relative uncertainty associated with the target reflectance.UR,abs is the absolute uncertainty associated with the target reflectance.R is the spectral reflectance of the target.
-# 
-# The standard uncertainty of each reading corresponds to the probability distributions associated with all different sources of uncertainty, including the instrument characteristics and experimental conditions. The contribution of individual sources of uncertainty was not considered in our uncertainty calculation, except for the ambient temperature (see 2.6).
 
-# Step 1: Calculate standard uncertainty for each reading Uxi
-# with Uxi = STDxi/rad(N), 
-# where STDxi is the standard deviation among scans of each reading 
-# and N is the number of scans per reading
-
-
-
-# enter here the metadata columns for grouping WITHOUT type and sample name
-metadata_cols <- colnames(lof_outliers_rm[1:12])
-
-# calculate means of each measurement type for each plant (i.e., mean of 5 scans)
-
-std_by_type <- lof_outliers_rm |>
-  # pivot data frame so each measurement has its own row
-  pivot_longer(
-    cols = `350`:`2500`,
-    names_to = "nm",
-    values_to = "val"
-  ) |>
-  # make nm as numeric so it will be ordered in descending
-  mutate(nm = as.numeric(nm)) |>
-  # group by all metadata columns
-  group_by(across(c(metadata_cols, type, nm))) |>
-  # add n_scans = number of scans per reading kept after outliers and calculate sd and standard uncertainty (uxi)
-  summarise(n_scans = n(),
-              mean = mean(val, na.rm = TRUE),
-              sd = sd(val, na.rm = TRUE),
-            uxi = sd/n_scans,
-  ) |>
-  # pivot again so we have one row for each nm and can calculate AU per nm
-  pivot_wider(
-  names_from = type,
-  values_from = c(mean, sd, uxi)
-  ) |>
-  group_by(across(c(metadata_cols, nm))) |>
-  # calculate CR
-  mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
-  # calculate AU
-  mutate(AU = (sqrt(CR/mean_BRL) * uxi_BRL^2) + 
-  (sqrt(CR/mean_BR) * uxi_BR^2) + 
-  (sqrt(CR/mean_WRL) * uxi_WRL^2) + 
-  (sqrt(CR/mean_WR) * uxi_WR^2)) |>
-  # select 
-  select(c(metadata_cols, nm, CR, AU)) |>
-  ungroup() |>
-  # replace NaN with NA
-  mutate_all(~ifelse(is.nan(.), NA, .))
-
-CR <- std_by_type |>
-  select(c(metadata_cols, nm, CR)) |>
-  # pivot
-  pivot_wider(
-    names_from = nm,
-    values_from = CR
-  )
-  
-AU <- std_by_type |>
-  select(c(metadata_cols, nm, AU)) |>
-  pivot_wider(
-    names_from = nm,
-    values_from = AU
-  )
 
 
 
