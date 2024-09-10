@@ -39,10 +39,10 @@ source("source/detect_lof_outliers.R")
 
 # select data subset
 ss <- "AT_pubescens_2"
-# ss <- "AT_robur_2"
-# ss <- "CH_pubescens_2"
-# ss <- "CH_robur_2"
-# ss <- "CH_robur_3"
+ss <- "AT_robur_2"
+ss <- "CH_pubescens_2"
+ss <- "CH_robur_2"
+ss <- "CH_robur_3"
 
 # select species
 if (str_detect(ss, "pubescens")) {
@@ -101,7 +101,7 @@ vis_outlier_rm <- inspect_by_type(spec_df)
 # at rob: all clear
 # ch pub: 8E3 too low around 1000 in BRL, manual rm:
 
-# ch rob 2: all clear
+# ch rob 2: all clear.. some WR?
 # ch rob 3: check BRL high in 1000 but seems otherwise ok so leave it
 
 # manual check:
@@ -119,7 +119,7 @@ vis_outlier_rm <- inspect_by_type(spec_df)
 # vis_outlier_rm <- vis_outlier_rm |>
 #   mutate(across(
 #     `350`:`2500`,
-#     ~ ifelse(planting_location == "B_20", NA, .)))
+#     ~ ifelse(planting_location == "8_E_3", NA, .)))
 
 #### OUTLIER DETECTION 2: LOF ####
 ## k: The kth-distance to be used to calculate the LOFs.
@@ -323,7 +323,8 @@ inspect_AU(AU_trim)
 
 
 ### NEXT TIME ####
-
+# beautify, add links and comments
+# improve performance
 
 
 
