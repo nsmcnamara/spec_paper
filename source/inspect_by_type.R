@@ -1,10 +1,14 @@
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
-# visually inspect the plots of different measurement types
+# This function plots the spectra by scan type.
+# It also calculates the means for each scan type for certain wavelengths
+# and colors these red as an additional warning. 
+
+
 inspect_by_type <- function(df) {
   # Define scan types
   scan_types <- levels(as.factor(df$type))
   
-  # Conditions for each scan type
+  # Define the conditions for each scan type to plot in red and throw warning
   conditions <- data.frame(
     scan_types = scan_types,
     threshold = c(0.1, 0.2, 0.9, 0.4),
@@ -23,17 +27,13 @@ inspect_by_type <- function(df) {
     mean_range_min <- as.character(conditions$mean_range_min[conditions$scan_types == scan_type])
     mean_range_max <- as.character(conditions$mean_range_max[conditions$scan_types == scan_type])
     
-    # Filter the data by type
-    spec_by_type <- df |>
-      filter(type == scan_type)
     
     # Calculate mean for the specified range
-    mean_by_type <- spec_by_type |>
-      rowwise() |>
-      mutate(mean = mean(c_across(all_of(mean_range_min):all_of(mean_range_max))), .before = `350`) |>
-      ungroup()
+    mean_by_type <- df |>
+      filter(type == scan_type) |>
+      mutate(mean = rowMeans(pick(all_of(mean_range_min):all_of(mean_range_max))), .before = `350`)
     
-    # Identify outliers based on the operator condition
+    # Identify outliers based on the conditions
     if (operator == "greater") {
       outliers <- mean_by_type |>
         filter(mean > threshold)
@@ -43,7 +43,7 @@ inspect_by_type <- function(df) {
     }
     
     # Plot the spectra for the specific type
-    plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
+    plot(as_spectra(subset(mean_by_type, select = `350`:`2500`)),
          main = paste0(ss, " ", scan_type)
     )
     # If outliers are detected, plot them in red
@@ -53,20 +53,16 @@ inspect_by_type <- function(df) {
       )
       legend("topright", legend = outliers$planting_location, title = "Outliers")
       
-      print(paste0("You have outliers for ", ss, " ", scan_type))
+      print(paste0("You have potential outliers for ", ss, " ", scan_type))
       print(unique(outliers$planting_location))
       
-      # Set outliers to NA in the main df
-      df <- df |>
-        mutate(across(
-          `350`:`2500`,
-          ~ ifelse(planting_location %in% outliers$planting_location, NA, .)
-        ))
     } else {
       print(paste0("No outliers for ", ss, " ", scan_type))
     }
   }
   
   # Return modified dataframe
-  return(df)
+  tot_outliers <- data.frame()
+  tot_outliers <- rbind(tot_outliers, outliers)
+  return(tot_outliers)
 }
