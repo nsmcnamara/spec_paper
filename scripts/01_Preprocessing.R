@@ -95,7 +95,7 @@ for (i in seq_along(file_paths)) {
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
 # This function plots the spectra by scan type.
 # It also calculates the means for each scan type for certain wavelengths
-# and colors these red as an additional warning. 
+# and colors these red as an additional warning.
 
 # call function
 outliers_vis_1 <- inspect_by_type(spec_df)
@@ -164,10 +164,11 @@ std_by_type <- lof_outliers_rm |>
   # group by all metadata columns
   group_by(across(c(metadata_cols, type, nm))) |>
   # add n_scans = number of scans per reading kept after outliers and calculate sd and standard uncertainty (uxi)
-  summarise(n_scans = n(),
-            mean = mean(val, na.rm = TRUE),
-            sd = sd(val, na.rm = TRUE),
-            uxi = sd/n_scans,
+  summarise(
+    n_scans = n(),
+    mean = mean(val, na.rm = TRUE),
+    sd = sd(val, na.rm = TRUE),
+    uxi = sd / n_scans,
   ) |>
   # pivot again so we have one row for each nm and can calculate AU per nm
   pivot_wider(
@@ -178,15 +179,15 @@ std_by_type <- lof_outliers_rm |>
   # calculate CR
   mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
   # calculate AU
-  mutate(AU = (sqrt(CR/mean_BRL) * uxi_BRL^2) + 
-           (sqrt(CR/mean_BR) * uxi_BR^2) + 
-           (sqrt(CR/mean_WRL) * uxi_WRL^2) + 
-           (sqrt(CR/mean_WR) * uxi_WR^2)) |>
-  # select 
+  mutate(AU = (sqrt(CR / mean_BRL) * uxi_BRL^2) +
+    (sqrt(CR / mean_BR) * uxi_BR^2) +
+    (sqrt(CR / mean_WRL) * uxi_WRL^2) +
+    (sqrt(CR / mean_WR) * uxi_WR^2)) |>
+  # select
   select(c(metadata_cols, nm, CR, AU)) |>
   ungroup() |>
   # replace NaN with NA
-  mutate_all(~ifelse(is.nan(.), NA, .))
+  mutate_all(~ ifelse(is.nan(.), NA, .))
 
 # make df w Reflectance
 CR <- std_by_type |>
@@ -206,8 +207,8 @@ AU <- std_by_type |>
   )
 
 
-  
- 
+
+
 #### TRIM ####
 CR_trim <- CR |>
   select(-c(`350`:`400`)) |>
@@ -229,38 +230,35 @@ CRAU <- rbind(CR_trim, AU_trim)
 #### OUTLIER DETECTION 3: VISUAL INSPECTION OF CR ####
 
 inspect_CR <- function(df) {
-  
-    # Calculate mean across the trimmed spectrum
-    CR_trim_mean <- CR_trim |>
-      rowwise() |>
-      mutate(mean = mean(c_across(`401`:`2500`)), .before = `401`)
-    
-    # Identify outliers 
-      outliers_above <- CR_trim_mean |>
-        filter(mean > 0.31)
-      outliers_below <- CR_trim_mean |>
-        filter(mean < 0.24)
-    
-    outliers <- rbind(outliers_above, outliers_below)
-    
-    # Plot the spectra for the specific type
-    plot(as_spectra(subset(df, select = `401`:`2500`)),
-         main = paste0(ss)
+  # Calculate mean across the trimmed spectrum
+  CR_trim_mean <- CR_trim |>
+    rowwise() |>
+    mutate(mean = mean(c_across(`401`:`2500`)), .before = `401`)
+
+  # Identify outliers
+  outliers_above <- CR_trim_mean |>
+    filter(mean > 0.31)
+  outliers_below <- CR_trim_mean |>
+    filter(mean < 0.24)
+
+  outliers <- rbind(outliers_above, outliers_below)
+
+  # Plot the spectra for the specific type
+  plot(as_spectra(subset(df, select = `401`:`2500`)),
+    main = paste0(ss)
+  )
+
+  # If outliers are detected, plot them in red
+  if (nrow(outliers) > 0) {
+    plot(as_spectra(subset(outliers, select = `401`:`2500`)),
+      col = "red", add = TRUE
     )
-   
-    # If outliers are detected, plot them in red
-    if (nrow(outliers) > 0) {
-      plot(as_spectra(subset(outliers, select = `401`:`2500`)),
-           col = "red", add = TRUE
-      )
-      legend("topright", legend = outliers$planting_location, title = "Outliers")
+    legend("topright", legend = outliers$planting_location, title = "Outliers")
 
-      print(paste0("You have potential outliers for ", ss))
-      print(unique(outliers$planting_location))
+    print(paste0("You have potential outliers for ", ss))
+    print(unique(outliers$planting_location))
+  }
 
-
-   }
-  
   # Return modified dataframe
   return(df)
 }
@@ -270,42 +268,39 @@ inspect_CR(CR_trim)
 
 
 inspect_AU <- function(df) {
-  
   # Calculate mean across the trimmed spectrum
   AU_trim_mean <- AU_trim |>
     rowwise() |>
     mutate(mean = mean(c_across(`401`:`2500`)), .before = `401`)
-  
-  # Identify outliers 
+
+  # Identify outliers
   outliers_ind <- AU_trim |>
     rowwise() |>
     filter(any(c_across(`401`:`2500`) > 0.0001)) |>
     ungroup()
   outliers_tot <- AU_trim_mean |>
     filter(mean > 0.0001)
-  
+
   outliers <- rbind(outliers_ind, outliers_tot)
-  
+
   # Plot the spectra for the specific type
   plot(as_spectra(subset(df, select = `401`:`2500`)),
-       main = paste0(ss),
-       ylim = c(0, 0.0005)
+    main = paste0(ss),
+    ylim = c(0, 0.0005)
   )
   abline(h = 0.0001, col = "red")
-  
+
   # If outliers are detected, plot them in red
   if (nrow(outliers) > 0) {
     plot(as_spectra(subset(outliers, select = `401`:`2500`)),
-         col = "red", add = TRUE
+      col = "red", add = TRUE
     )
     legend("topright", legend = outliers$planting_location, title = "Outliers")
-    
+
     print(paste0("You have potential outliers for ", ss))
     print(unique(outliers$planting_location))
-    
-    
   }
-  
+
   # Return modified dataframe
   return(df)
 }
