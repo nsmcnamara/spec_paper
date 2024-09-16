@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-09-10
+### Last Update 2024-09-16
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -39,10 +39,10 @@ source("source/detect_lof_outliers.R")
 
 # select data subset
 ss <- "AT_pubescens_2"
-ss <- "AT_robur_2"
-ss <- "CH_pubescens_2"
-ss <- "CH_robur_2"
-ss <- "CH_robur_3"
+# ss <- "AT_robur_2"
+# ss <- "CH_pubescens_2"
+# ss <- "CH_robur_2"
+# ss <- "CH_robur_3"
 
 # select species
 if (str_detect(ss, "pubescens")) {
@@ -93,9 +93,12 @@ for (i in seq_along(file_paths)) {
 }
 
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
+# This function plots the spectra by scan type.
+# It also calculates the means for each scan type for certain wavelengths
+# and colors these red as an additional warning. 
 
 # call function
-vis_outlier_rm <- inspect_by_type(spec_df)
+outliers_vis_1 <- inspect_by_type(spec_df)
 
 # at pub: rm B20
 # at rob: all clear
@@ -320,7 +323,11 @@ inspect_AU(AU_trim)
 # }
 
 
-
+##
+# combine outlier dfs
+# save combined outlier df
+# remove outliers from data
+# save new and processed data
 
 ### NEXT TIME ####
 # beautify, add links and comments
