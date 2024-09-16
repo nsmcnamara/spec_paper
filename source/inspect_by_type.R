@@ -8,6 +8,9 @@ inspect_by_type <- function(df) {
   # Define scan types
   scan_types <- levels(as.factor(df$type))
   
+  # Define df for returning outliers
+  tot_outliers <- data.frame()
+  
   # Define the conditions for each scan type to plot in red and throw warning
   conditions <- data.frame(
     scan_types = scan_types,
@@ -59,10 +62,13 @@ inspect_by_type <- function(df) {
     } else {
       print(paste0("No outliers for ", ss, " ", scan_type))
     }
+    
+    # Add outliers to df to be returned
+    tot_outliers <- rbind(tot_outliers, df[df$sample_name %in% outliers$sample_name, ])
   }
   
-  # Return modified dataframe
-  tot_outliers <- data.frame()
-  tot_outliers <- rbind(tot_outliers, outliers)
+  # add column to identify which outlier type it is
+  tot_outliers <- cbind(outlier_type = "vis_1", tot_outliers)
+  
   return(tot_outliers)
 }
