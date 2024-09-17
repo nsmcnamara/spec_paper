@@ -68,7 +68,9 @@ inspect_by_type <- function(df) {
   }
   
   # add column to identify which outlier type it is
-  tot_outliers <- cbind(outlier_type = "vis_1", tot_outliers)
+  tot_outliers <- tot_outliers |>
+    mutate(outlier_type = "vis_1") |>
+    relocate(outlier_type)
   
   return(tot_outliers)
 }
