@@ -3,7 +3,7 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = n_leaf_scans) {
   scan_types <- levels(as.factor(df$type))
   
   # Define df for returning outliers
-  tot_outliers <- data.frame()
+  tot_outliers <- df[0, ]
   
   for (scan_type in scan_types) {
     print(paste0("Processing: ", ss, " ", scan_type))
@@ -40,6 +40,7 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = n_leaf_scans) {
       
     } else {
       print("You have no LOF outliers.")
+
     }
     
   }
