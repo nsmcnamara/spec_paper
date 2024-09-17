@@ -1,6 +1,9 @@
-detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
+detect_lof_outliers <- function(df, lof_threshold = 2, k = n_leaf_scans) {
   # Define types
   scan_types <- levels(as.factor(df$type))
+  
+  # Define df for returning outliers
+  tot_outliers <- data.frame()
   
   for (scan_type in scan_types) {
     print(paste0("Processing: ", ss, " ", scan_type))
@@ -17,66 +20,34 @@ detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
     lof_outliers <- lof_by_type |>
       filter(lof_score > lof_threshold)
     
-    # if only one scan per plant is outlier: set all nm values of that single scan to NA
-    single_outliers <- lof_outliers |>
-      group_by(planting_location) |>
-      filter(n() == 1)
+    # plot
+    plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
+         main = paste0(ss, " ", scan_type)
+    )
     
-    if (nrow(single_outliers) > 0) {
-      print("You have single scan outliers:")
-      print(paste0(single_outliers$planting_location, " scan: ", single_outliers$sample_name))
+    if (nrow(lof_outliers) > 0) {
+      print("You have LOF outliers:")
+      print(paste0(lof_outliers$planting_location))
       
-      # plot
-      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type)
-      )
-      plot(as_spectra(subset(single_outliers, select = `350`:`2500`)),
+      # plot outliers
+      plot(as_spectra(subset(lof_outliers, select = `350`:`2500`)),
            col = "red", add = TRUE
       )
-      legend(x = "topright", legend = single_outliers$planting_location, title = "Single Scan Outliers")
+      legend(x = "topright", legend = lof_outliers$planting_location, title = "LOF Outliers")
       
-      # set all nm values of that single scan to NA
-      df <- df |>
-        mutate(across(
-          `350`:`2500`,
-          ~ ifelse(sample_name %in% single_outliers$sample_name, NA, .)
-        ))
+      # Add outliers to df to be returned
+      tot_outliers <- rbind(tot_outliers, df[df$sample_name %in% lof_outliers$sample_name, ])
+      
     } else {
-      print("You have no single scan outliers.")
+      print("You have no LOF outliers.")
     }
     
-    
-    # if more than one scan per plant is outlier: set all nm values for all scans for this plant to NA
-    mult_outliers <- lof_outliers |>
-      group_by(planting_location) |>
-      filter(n() > 1)
-    
-    if (nrow(mult_outliers) > 0) {
-      print("You have multiple scan outliers:")
-      print(paste0(mult_outliers$planting_location, " scan: ", mult_outliers$sample_name))
-      
-      # plot
-      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type)
-      )
-      plot(as_spectra(subset(mult_outliers, select = `350`:`2500`)),
-           col = "red", add = TRUE
-      )
-      legend(
-        x = "topright", legend = paste0(mult_outliers$planting_location, " ", mult_outliers$sample_name),
-        title = "Multi Scan Outliers"
-      )
-      
-      # Set all 20 scans for that plant to NA
-      df <- df |>
-        mutate(across(
-          `350`:`2500`,
-          ~ ifelse(planting_location %in% mult_outliers$planting_location, NA, .)
-        ))
-    } else {
-      print("You have no multiple scan outliers.")
-    }
   }
   
-  return(df)
+  # add column to identify which outlier type it is
+  tot_outliers <- tot_outliers |>
+    mutate(outlier_type = "lof") |>
+    relocate(outlier_type)
+  
+  return(tot_outliers)
 }
