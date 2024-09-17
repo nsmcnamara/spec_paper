@@ -135,7 +135,7 @@ dev.off()
 #      col = "red", add = TRUE
 # )
 
-# manual addition of outlier: e.g. for planting location "8_E_3")
+# manual addition of outlier to outlier df: e.g. for planting location "8_E_3")
 # outliers_vis_1_man <- spec_df |>
 #   filter(planting_location == "8_E_3") |>
 #   mutate(outlier_type = "vis_man", .before = 1)
@@ -147,26 +147,23 @@ dev.off()
 # It calculates the local outlier factor (LOF), i.e. if something is an outlier given its local neighbourhood.
 
 # k: The kth-distance to be used to calculate the LOFs.
-# if k is set to the number of scans per scan type
+# if k is set to the number of scans per scan type,
 # this identifies if one or more scans are abnormally far apart from each other
 # irrespective of whether a single plant is just different from other plants.
 # i.e. it aims to identify measurement error.
 # LOF threshold 2 is somewhat arbitrary but reasonable based on the paper.
 
+# print 4 plots in window so all scan types can be seen together
+par(mfrow = c(2,2))
+
+# save 
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "outliers_lof.png"))
+
 # Call the function
 outliers_lof <- detect_lof_outliers(spec_df, lof_threshold = 2, k = n_leaf_scans)
 
-# man plotting
-# tst <- vis_outlier_rm |>
-#   filter(type == "BR")
-# plot(as_spectra(subset(tst, select = `350`:`2500`)),
-#      main = paste0(ss, " BR ")
-# )
-# tst2 <- tst |>
-#   filter(planting_location == "38_G_2")
-# plot(as_spectra(subset(tst2, select = `350`:`2500`)),
-#      col = "red", add = TRUE
-# )
+# close device
+dev.off()
 
 #### CALCULATE REFLECTANCE ####
 
