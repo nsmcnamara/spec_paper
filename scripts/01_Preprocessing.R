@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-09-16
+### Last Update 2024-09-17
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -18,14 +18,12 @@ library(spectrolab)
 library(tidyverse)
 library(conflicted)
 library(DescTools)
+library(data.table)
 
 # check and resolve conflicts
 conflict_scout()
 conflicts_prefer(
-  dplyr::filter,
-  dplyr::lag,
-  spectrolab::smooth,
-  spectrolab::combine
+  dplyr::filter
 )
 
 # define directory paths
@@ -37,7 +35,7 @@ source("source/inspect_by_type.R")
 source("source/detect_lof_outliers.R")
 
 
-# select data subset
+# select folder w/ data subset
 ss <- "AT_pubescens_2"
 # ss <- "AT_robur_2"
 # ss <- "CH_pubescens_2"
@@ -53,6 +51,8 @@ if (str_detect(ss, "pubescens")) {
   print("Could not detect species")
 }
 
+# define number of leaf scans per scan type (e.g. 5 white refs --> 5)
+n_leaf_scans <- 5
 
 #### DATA IMPORT ####
 # import metadata
@@ -64,8 +64,11 @@ file_paths <- list.dirs(paste0(getwd(), dat.path1, ss), recursive = FALSE)
 # get file paths for metadata for each data subset
 meta_files <- list.files(paste0(getwd(), dat.path1, ss), pattern = ".csv", include.dirs = FALSE)
 
-# Create df to store data in
+# Create data frame to store data in (data.table faster than data.frame)
 spec_df <- data.frame()
+
+# base path
+base_path <- paste0(getwd(), dat.path1, ss, "/")
 
 # import spectral measurement and merge with metadata
 # Loop through each folder within the file paths
@@ -74,23 +77,25 @@ for (i in seq_along(file_paths)) {
   spectra <- read_spectra(path = file_paths[i])
 
   # Load metadata
-  meta <- read.csv(paste0(getwd(), dat.path1, ss, "/", meta_files[i]))
+  meta <- read.csv(paste0(base_path, meta_files[i]))  
 
   # Create a table for merging spectra with measurement type
-  mmt <- tibble(
-    type = rep(c("WR", "WRL", "BR", "BRL"), each = 5, times = nrow(meta)),
-    planting_location = rep(meta$planting_location, each = 20)
+  mmt <- data.frame(
+    type = rep(c("WR", "WRL", "BR", "BRL"), each = n_leaf_scans, times = nrow(meta)),
+    planting_location = rep(meta$planting_location, each = 4*n_leaf_scans)
   )
 
   # Merge with spectra
   spectra_mmt <- cbind(mmt, spectra)
 
   # Merge with metadata, make sure species matches, because planting location in Austria is not unique
-  spectra_mmt_meta <- right_join(metadata[metadata$species == species, ], spectra_mmt, by = "planting_location")
-
+  spectra_mmt_meta <- right_join(metadata[metadata$species == species, ], 
+                                 spectra_mmt, by = "planting_location")
+  
   # Store data in df
   spec_df <- rbind(spec_df, spectra_mmt_meta) # Append the new data
 }
+
 
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
 # This function plots the spectra by scan type.
@@ -107,31 +112,40 @@ outliers_vis_1 <- inspect_by_type(spec_df)
 # ch rob 2: all clear.. some WR?
 # ch rob 3: check BRL high in 1000 but seems otherwise ok so leave it
 
-# manual check:
+# manual check: plot by scan type, e.g. "BRL"
 # tst <- spec_df |>
 #   filter(type == "BRL")
 # plot(as_spectra(subset(tst, select = `350`:`2500`)),
 #      main = paste0(ss, " BRL ")
 # )
+
+# manual check: plot where a specific value is above a threshold, e.g. at 1000 nm is above 0.55
 # tst2 <- tst |>
 #   filter(`1000` > 0.55)
 # plot(as_spectra(subset(tst2, select = `350`:`2500`)),
 #      col = "red", add = TRUE
 # )
-# manual rm:
-# vis_outlier_rm <- vis_outlier_rm |>
-#   mutate(across(
-#     `350`:`2500`,
-#     ~ ifelse(planting_location == "8_E_3", NA, .)))
+
+# manual addition of outlier: e.g. for planting location "8_E_3")
+# outliers_vis_1_man <- spec_df |>
+#   filter(planting_location == "8_E_3") |>
+#   mutate(outlier_type = "vis_man", .before = 1)
+# outliers_vis_1 <- rbind(outliers_vis_1_man, outliers_vis_1)
+
 
 #### OUTLIER DETECTION 2: LOF ####
-## k: The kth-distance to be used to calculate the LOFs.
-## k 5 makes sense: always 5 measurements that should make a local cluster
-## this identifies if one or more scans are abnormally far apart from each other
-## irrespective of whether a single plant is just different from other plants
+# This function is based on this paper: https://dl.acm.org/doi/pdf/10.1145/335191.335388
+# It calculates the local outlier factor (LOF), i.e. if something is an outlier given its local neighbourhood.
+
+# k: The kth-distance to be used to calculate the LOFs.
+# if k is set to the number of scans per scan type
+# this identifies if one or more scans are abnormally far apart from each other
+# irrespective of whether a single plant is just different from other plants.
+# i.e. it aims to identify measurement error.
+# LOF threshold 2 is somewhat arbitrary but reasonable based on the paper.
 
 # Call the function
-lof_outliers_rm <- detect_lof_outliers(vis_outlier_rm, lof_threshold = 2, 5)
+outliers_lof <- detect_lof_outliers(spec_df, lof_threshold = 2, k = n_leaf_scans)
 
 # man plotting
 # tst <- vis_outlier_rm |>
