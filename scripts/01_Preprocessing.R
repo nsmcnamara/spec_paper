@@ -26,14 +26,14 @@ conflicts_prefer(
   dplyr::filter
 )
 
-# define directory paths
-res.path1 <- "/output/"
-dat.path1 <- "/data/raw/"
-
 # load functions
 source("source/inspect_by_type.R")
 source("source/detect_lof_outliers.R")
 
+## Define Variables
+# define directory paths
+res.path1 <- "/output/"
+dat.path1 <- "/data/raw/"
 
 # select folder w/ data subset
 ss <- "AT_pubescens_2"
@@ -58,17 +58,17 @@ n_leaf_scans <- 5
 # import metadata
 metadata <- read_csv("data/raw/metadata.csv")
 
+# base path
+base_path <- paste0(getwd(), dat.path1, ss)
+
 # get file paths for data subset
-file_paths <- list.dirs(paste0(getwd(), dat.path1, ss), recursive = FALSE)
+file_paths <- list.dirs(base_path, recursive = FALSE)
 
 # get file paths for metadata for each data subset
-meta_files <- list.files(paste0(getwd(), dat.path1, ss), pattern = ".csv", include.dirs = FALSE)
+meta_files <- list.files(base_path, pattern = ".csv", include.dirs = FALSE)
 
-# Create data frame to store data in (data.table faster than data.frame)
+# Create data frame to store data in
 spec_df <- data.frame()
-
-# base path
-base_path <- paste0(getwd(), dat.path1, ss, "/")
 
 # import spectral measurement and merge with metadata
 # Loop through each folder within the file paths
@@ -77,7 +77,7 @@ for (i in seq_along(file_paths)) {
   spectra <- read_spectra(path = file_paths[i])
 
   # Load metadata
-  meta <- read.csv(paste0(base_path, meta_files[i]))  
+  meta <- read.csv(paste0(base_path, "/", meta_files[i]))  
 
   # Create a table for merging spectra with measurement type
   mmt <- data.frame(
@@ -102,8 +102,17 @@ for (i in seq_along(file_paths)) {
 # It also calculates the means for each scan type for certain wavelengths
 # and colors these red as an additional warning.
 
-# call function
+# print 4 plots in window so all scan types can be seen together
+par(mfrow = c(2,2))
+
+# save 
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "outliers_vis_1.png"))
+
+# call function and store the outliers in a data frame
 outliers_vis_1 <- inspect_by_type(spec_df)
+
+# close device
+dev.off()
 
 # at pub: rm B20
 # at rob: all clear
