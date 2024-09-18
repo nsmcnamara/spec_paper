@@ -1,5 +1,5 @@
-
 inspect_CR <- function(df1, df2) {
+  
   # Calculate mean across the trimmed spectrum
   CR_trim_mean <- df1 |>
     mutate(mean = rowMeans(pick(`401`:`2500`)), .before = `401`)
@@ -12,13 +12,15 @@ inspect_CR <- function(df1, df2) {
   iqr_outliers <- CR_trim_mean |>
     filter(mean < lower_bound | mean > upper_bound) |>
     mutate(outlier_type = "IQR") |>
-    relocate(outlier_type)
+    relocate(outlier_type) |>
+    select(-mean)
   
   # identify outliers where AU is too high
   au_outliers <- AU_trim |>
-    filter(any(c_across(`401`:`2500`) > 0.0001)) |>
+    filter(any(c_across(`401`:`2500`) > 0.01)) |>
     mutate(outlier_type = "AU") |>
     relocate(outlier_type)
+  
   
   outliers <- rbind(iqr_outliers, au_outliers)
   
