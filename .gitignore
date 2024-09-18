@@ -53,3 +53,5 @@ data/~$metadata.xlsx
 .DS_Store
 .DS_Store
 /data
+/temp
+*.png

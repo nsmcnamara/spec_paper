@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-08-19
+### Last Update 2024-09-17
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -18,44 +18,57 @@ library(spectrolab)
 library(tidyverse)
 library(conflicted)
 library(DescTools)
+library(data.table)
 
 # check and resolve conflicts
 conflict_scout()
 conflicts_prefer(
-  dplyr::filter,
-  dplyr::lag,
-  spectrolab::smooth,
-  spectrolab::combine
+  dplyr::filter
 )
 
+# load functions
+source("source/inspect_by_type.R")
+source("source/detect_lof_outliers.R")
+source("source/inspect_CR.R")
+
+## Define Variables
 # define directory paths
 res.path1 <- "/output/"
 dat.path1 <- "/data/raw/"
 
-# load functions
-
-# select data subset
-ss <- "AT_pubescens_2"
+# select folder w/ data subset
+# ss <- "AT_pubescens_2"
 # ss <- "AT_robur_2"
-# ss <- "CH_pubescens_2"
+ss <- "CH_pubescens_2"
 # ss <- "CH_robur_2"
 # ss <- "CH_robur_3"
 
 # select species
-species <- if_else(str_detect(ss, "pubescens"), "Q.pubescens", "Q.robur")
+if (str_detect(ss, "pubescens")) {
+  species <- "Q.pubescens"
+} else if (str_detect(ss, "robur")) {
+  species <- "Q.robur"
+} else {
+  print("Could not detect species")
+}
 
+# define number of leaf scans per scan type (e.g. 5 white refs --> 5)
+n_leaf_scans <- 5
 
 #### DATA IMPORT ####
 # import metadata
 metadata <- read_csv("data/raw/metadata.csv")
 
+# base path
+base_path <- paste0(getwd(), dat.path1, ss)
+
 # get file paths for data subset
-file_paths <- list.dirs(paste0(getwd(), dat.path1, ss), recursive = FALSE)
+file_paths <- list.dirs(base_path, recursive = FALSE)
 
 # get file paths for metadata for each data subset
-meta_files <- list.files(paste0(getwd(), dat.path1, ss), pattern = ".csv", include.dirs = FALSE)
+meta_files <- list.files(base_path, pattern = ".csv", include.dirs = FALSE)
 
-# Create df to store data in
+# Create data frame to store data in
 spec_df <- data.frame()
 
 # import spectral measurement and merge with metadata
@@ -65,215 +78,248 @@ for (i in seq_along(file_paths)) {
   spectra <- read_spectra(path = file_paths[i])
 
   # Load metadata
-  meta <- read.csv(paste0(getwd(), dat.path1, ss, "/", meta_files[i]))
+  meta <- read.csv(paste0(base_path, "/", meta_files[i]))  
 
   # Create a table for merging spectra with measurement type
-  mmt <- tibble(
-    type = rep(c("WR", "WRL", "BR", "BRL"), each = 5, times = nrow(meta)),
-    planting_location = rep(meta$planting_location, each = 20)
+  mmt <- data.frame(
+    type = rep(c("WR", "WRL", "BR", "BRL"), each = n_leaf_scans, times = nrow(meta)),
+    planting_location = rep(meta$planting_location, each = 4*n_leaf_scans)
   )
 
   # Merge with spectra
   spectra_mmt <- cbind(mmt, spectra)
 
   # Merge with metadata, make sure species matches, because planting location in Austria is not unique
-  spectra_mmt_meta <- right_join(metadata[metadata$species == species, ], spectra_mmt, by = "planting_location")
-
+  spectra_mmt_meta <- right_join(metadata[metadata$species == species, ], 
+                                 spectra_mmt, by = "planting_location")
+  
   # Store data in df
   spec_df <- rbind(spec_df, spectra_mmt_meta) # Append the new data
 }
 
 
 #### OUTLIER DETECTION 1: VISUAL INSPECTION ####
-# visually inspect the plots of different measurement types
-inspect_by_type <- function(df) {
-  # Define scan types
-  scan_types <- levels(as.factor(df$type))
-  
-  # Conditions for each scan type
-  conditions <- data.frame(scan_types = scan_types, 
-                           threshold = c(0.1, 0.2, 0.9, 0.4), 
-                           operator = c("greater", "greater", "smaller", "greater"),
-                           mean_range_min = c(350, 480, 350, 480),
-                           mean_range_max = c(2500, 520, 2500, 520))
-  
-  # Loop through scan types
-  for (scan_type in scan_types) {
-    print(paste0("Processing: ", ss, " ", scan_type))
-    
-    # Retrieve conditions for the current scan type                    
-    threshold <- conditions$threshold[conditions$scan_types == scan_type]
-    operator <- conditions$operator[conditions$scan_types == scan_type]
-    mean_range_min <- as.character(conditions$mean_range_min[conditions$scan_types == scan_type])
-    mean_range_max <- as.character(conditions$mean_range_max[conditions$scan_types == scan_type])
-    
-    # Filter the data by type
-    spec_by_type <- df |>
-      filter(type == scan_type)
-    
-    # Calculate mean for the specified range
-    mean_by_type <- spec_by_type |>
-      rowwise() |>
-      mutate(mean = mean(c_across(all_of(mean_range_min):all_of(mean_range_max))), .before = `350`) |>
-      ungroup()
-    
-    # Identify outliers based on the operator condition
-    if (operator == "greater") {
-      outliers <- mean_by_type |>
-        filter(mean > threshold)
-    } else {
-      outliers <- mean_by_type |>
-        filter(mean < threshold)
-    }
-    
-    # Plot the spectra for the specific type
-    plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-         main = paste0(ss, " ", scan_type))
-    # If outliers are detected, plot them in red
-    if (nrow(outliers) > 0) {
-      plot(as_spectra(subset(outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
-      legend("topright", legend = outliers$planting_location, title = "Outliers")
-      
-      print(paste0("You have outliers for ", ss, " ", scan_type))
-      print(unique(outliers$planting_location))
-      
-      # Set outliers to NA in the main df
-      df <- df |>
-        mutate(across(`350`:`2500`, 
-                      ~ ifelse(planting_location %in% outliers$planting_location, NA, .)))
-      
-    } else {
-      print(paste0("No outliers for ", ss, " ", scan_type))
-    }
-  }
-  
-  # Return modified dataframe
-  return(df)
-}
+# This function plots the spectra by scan type.
+# It also calculates the means for each scan type for certain wavelengths
+# and colors these red as an additional warning.
 
-# call
-vis_outlier_rm <- inspect_by_type(spec_df)
+# open png device and specify file name 
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "outliers_vis_1.png"))
+
+# print 4 plots in window so all scan types can be seen together
+par(mfrow = c(2,2))
+
+# call function and store the outliers in a data frame
+outliers_vis_1 <- inspect_by_type(spec_df)
+
+# close device
+dev.off()
+
+# manual check: plot by scan type, e.g. "BRL"
+# tst <- spec_df |>
+#   filter(type == "BRL")
+# plot(as_spectra(subset(tst, select = `350`:`2500`)),
+#      main = paste0(ss, " BRL ")
+# )
+
+# manual check: plot where a specific value is above a threshold, e.g. at 1000 nm is above 0.55
+# tst2 <- tst |>
+#   filter(`1000` > 0.55)
+# plot(as_spectra(subset(tst2, select = `350`:`2500`)),
+#      col = "red", add = TRUE
+# )
+
+# manual addition of outlier to outlier df: e.g. for planting location "8_E_3")
+# outliers_vis_1_man <- spec_df |>
+#   filter(planting_location == "8_E_3") |>
+#   mutate(outlier_type = "vis_man", .before = 1)
+# outliers_vis_1 <- rbind(outliers_vis_1_man, outliers_vis_1)
 
 
 #### OUTLIER DETECTION 2: LOF ####
-## k: The kth-distance to be used to calculate the LOFs.
-## k 5 makes sense: always 5 measurements that should make a local cluster
-## this identifies if one or more scans are abnormally far apart from each other
-## irrespective of whether a single plant is just different from other plants
+# This function is based on this paper: https://dl.acm.org/doi/pdf/10.1145/335191.335388
+# It calculates the local outlier factor (LOF), i.e. if something is an outlier given its local neighbourhood.
+
+# k: The kth-distance to be used to calculate the LOFs.
+# if k is set to the number of scans per scan type,
+# this identifies if one or more scans are abnormally far apart from each other
+# irrespective of whether a single plant is just different from other plants.
+# i.e. it aims to identify measurement error.
+# LOF threshold 2 is somewhat arbitrary but reasonable based on the paper.
 
 
-# LOF outliers detector
-detect_lof_outliers <- function(df, lof_threshold = 2, k = 5) {
-  # Define types
-  scan_types <- levels(as.factor(df$type))
-  
-  for (scan_type in scan_types) {
-    print(paste0("Processing: ", ss, " ", scan_type))
-    
-    # Filter by type
-    spec_by_type <- df |>
-      filter(type == scan_type)
-    
-    # Calculate LOF scores and insert before column of 350nm
-    lof_by_type <- spec_by_type |>
-      mutate(lof_score = LOF(subset(spec_by_type, select = `350`:`2500`), k = k), .before = "350")
-    
-    # Identify outliers
-    lof_outliers <- lof_by_type |>
-      filter(lof_score > lof_threshold)
-    
-    # if only one scan per plant is outlier: set all nm values of that single scan to NA
-    single_outliers <- lof_outliers |>
-      group_by(planting_location) |>
-      filter(n() == 1)
-    
-    if (nrow(single_outliers) > 0) {
-      print("You have single scan outliers:")
-      print(paste0(single_outliers$planting_location, " scan: ", single_outliers$sample_name))
-      
-      # plot
-      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type))
-      plot(as_spectra(subset(single_outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
-      legend(x = "topright", legend = single_outliers$planting_location, title = "Single Scan Outliers")
-      
-      # set all nm values of that single scan to NA
-      df <- df |>
-        mutate(across(`350`:`2500`,
-                      ~ ifelse(sample_name %in% single_outliers$sample_name, NA, .)
-        ))
-      
-    } else {
-      print("You have no single scan outliers.")
-    }
-    
-    
-    # if more than one scan per plant is outlier: set all nm values for all scans for this plant to NA
-    mult_outliers <- lof_outliers |>
-      group_by(planting_location) |>
-      filter(n() > 1)
-    
-    if (nrow(mult_outliers) > 0) {
-      print("You have multiple scan outliers:")
-      print(paste0(mult_outliers$planting_location, " scan: ", mult_outliers$sample_name))
-      
-      # plot
-      plot(as_spectra(subset(spec_by_type, select = `350`:`2500`)),
-           main = paste0(ss, " ", scan_type))
-      plot(as_spectra(subset(mult_outliers, select = `350`:`2500`)), 
-           col = "red", add = TRUE)
-      legend(x = "topright", legend = paste0(mult_outliers$planting_location, " ", mult_outliers$sample_name), 
-             title = "Multi Scan Outliers")
-      
-      # Set all 20 scans for that plant to NA
-      df <- df |>
-        mutate(across(`350`:`2500`,
-                      ~ ifelse(planting_location %in% mult_outliers$planting_location, NA, .)
-        ))
-      
-    } else {
-      print("You have no multiple scan outliers.")
-    }
-  }
-  
-  return(df)
-}
+# open png device and specify file name
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "outliers_lof.png"))
+
+# print 4 plots in window so all scan types can be seen together
+par(mfrow = c(2,2))
 
 # Call the function
-lof_outliers_rm <- detect_lof_outliers(spec_df, lof_threshold = 2, 5)
+outliers_lof <- detect_lof_outliers(spec_df, lof_threshold = 2, k = n_leaf_scans)
+
+# close device
+dev.off()
+
+#### CALCULATE REFLECTANCE AND ABSOLUTE UNCERTAINTY ####
+# Calculation of Reflectance follows this paper: https://doi.org/10.1080/01431169208904118
+# Calculation of Absolute Uncertainty follows this paper: https://doi.org/10.1016/j.rse.2021.112601
+
+# enter here the metadata columns for grouping WITHOUT type and sample name
+metadata_cols <- colnames(spec_df[1:12])
+
+# calculate reflectance and absolute uncertainty
+CR_AU_comb <- spec_df |>
+  # pivot data frame so each measurement has its own row
+  pivot_longer(
+    cols = `350`:`2500`,
+    names_to = "nm",
+    values_to = "val"
+  ) |>
+  # make nm as numeric so it will be ordered in descending
+  mutate(nm = as.numeric(nm)) |>
+  # group by all metadata columns
+  group_by(across(c((all_of(metadata_cols)), type, nm))) |>
+  # add n_scans = number of scans per reading and calculate sd and standard uncertainty (uxi)
+  summarise(
+    n_scans = n(),
+    mean = mean(val, na.rm = TRUE),
+    sd = sd(val, na.rm = TRUE),
+    uxi = sd / sqrt(n_scans),
+  ) |>
+  # pivot again so we have one row for each nm and can calculate AU per nm
+  pivot_wider(
+    names_from = type,
+    values_from = c(mean, sd, uxi)
+  ) |>
+  group_by(across(c(metadata_cols, nm))) |>
+  # calculate Reflectanc
+  mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
+  # calculate Absolute Uncertainty
+  mutate(AU = sqrt(
+    (mean_BR * (mean_WRL - mean_BRL) / ((mean_WR-mean_BR)^2))^2 * uxi_WR^2 +
+      (mean_BR/(mean_WR-mean_BR))^2 * uxi_WRL^2 +
+      (mean_WR * (mean_WRL-mean_BRL)/((mean_WR-mean_BR)^2))^2 * uxi_BR^2 +
+      (mean_WR / (mean_WR-mean_BR))^2 * uxi_BRL^2 
+    
+  ))  |>
+  # select relevant columns
+  select(c(metadata_cols, nm, CR, AU)) |>
+  ungroup() |>
+  # replace NaN with NA
+  mutate_all(~ ifelse(is.nan(.), NA, .))
+
+# make df w Reflectance
+CR <- CR_AU_comb |>
+  select(c(metadata_cols, nm, CR)) |>
+  # pivot
+  pivot_wider(
+    names_from = nm,
+    values_from = CR
+  )
+
+# make df w Absolute Uncertainties
+AU <- CR_AU_comb |>
+  select(c(metadata_cols, nm, AU)) |>
+  pivot_wider(
+    names_from = nm,
+    values_from = AU
+  )
+
+# Plot
+# specify file name
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "CR_AU.png"))
+
+# use entire window to plot
+par(mfrow = c(1,1))
+
+# add margins
+par(mar = c(5, 4, 4, 6))
+
+# plot reflectance
+plot(as_spectra(subset(CR, select = `350`:`2500`)),
+     main = paste0(ss, " untrimmed"),
+     ylab = "Reflectance [no unit]",
+     xlab = "Wavelength [nm]",
+     las = 1,
+     ylim = c(0,1))
+
+# add line where data will be trimmed
+abline(v = 400, col = "blue", lty = 3, lwd = 2)
+text(x = 500, y = 0.9, labels = "trim", col = "blue")
+
+# plot absolute uncertainty
+par(new = TRUE)
+plot(as_spectra(subset(AU, select = `350`:`2500`)),
+     ylim = c(0, 0.01),
+     col = "red", axes = FALSE, xlab = "", ylab = "")
+
+axis(side = 4, col = "red", col.axis = "red",
+     at = seq(0, 0.01, by = 0.002),
+     labels = format(seq(0, 0.01, by = 0.002), scientific = FALSE),
+     las = 1)
+
+mtext("Absolute Uncertainty [no unit]", side = 4, line = 4, col = "red")
+
+dev.off()
+
+
+# trim the noisy section of 350 - 400 nm
+
+CR_trim <- CR |>
+  select(-c(`350`:`400`)) |>
+  mutate(feat = "CR", .before = `401`)
+
+AU_trim <- AU |>
+  select(-c(`350`:`400`)) |>
+  mutate(feat = "AU", .before = `401`)
+
+
+# save trimmed data
+write_csv(CR_trim, 
+          file = paste0(getwd(), "/data/processed/", species, "_", ss, "_CR_trimmed.csv"))
+write_csv(AU_trim, 
+          file = paste0(getwd(), "/data/processed/", species, "_", ss, "_AU_trimmed.csv"))
+
+
+#### OUTLIER DETECTION 3: VISUAL INSPECTION OF CR ####
+# Plot
+# specify file name
+png(filename = paste0(getwd(), res.path1, species, "_", ss, "_", "vis_2.png"))
+
+# use entire window to plot
+par(mfrow = c(1,1))
+
+# call function
+outliers_vis_2 <- inspect_CR(CR_trim, AU_trim)
+
+dev.off()
+
+
+#### REMOVING OUTLIERS IF NECESSARY ####
+# combine outlier dfs
+all_outliers <- bind_rows(
+  outliers_vis_1 |> select(c("outlier_type", metadata_cols)),
+  outliers_lof |> select(c("outlier_type", metadata_cols)),
+  outliers_vis_2 |> select(c("outlier_type", metadata_cols))
+)
+
+# save combined outlier df
+write_csv(all_outliers, 
+          file = paste0(getwd(), "/data/processed/", species, "_", ss, "_outliers.csv"))
+
+# remove outliers from data
+CR_outliers_rm <- anti_join(CR_trim, all_outliers, by = "planting_location")
+AU_outliers_rm <- anti_join(AU_trim, all_outliers, by = "planting_location")
+
+# save new and processed data
+write_csv(CR_outliers_rm, 
+          file = paste0(getwd(), "/data/processed/", species, "_", ss, "_CR_outliers_rm.csv"))
+
+write_csv(AU_outliers_rm, 
+          file = paste0(getwd(), "/data/processed/", species, "_", ss, "_AU_outliers_rm.csv"))
 
 
 
 
-
-
-
-# Create an empty matrix for Calculated Reflectance
-# CR_current <- matrix(NA, nrow = nrow(current_merged) / 20, ncol = ncol(current_merged) - 3, dimnames = NULL)
-
-# n = 1
-
-# for (j in seq(1, nrow(current_merged), 20)) {
-#   for (k in 4:ncol(current_merged)) {
-#     WR = mean(current_merged[(j + 1):(j + 4), k])
-#     WRL = mean(current_merged[(j + 6):(j + 9), k])
-#     BR = mean(current_merged[(j + 11):(j + 14), k])
-#     BRL = mean(current_merged[(j + 16):(j + 19), k])
-#     CR_current[n, k - 3] = (BRL * WR - WRL * BR) / (WR - BR)
-#   }
-#   n = n + 1
-# }
-
-
-# # Rename column names
-# colnames(CR_current_meta)[14:2164] <- 350:2500
-
-# # Store processed data frame in the list
-# processed_data_list[[i]] <- CR_current_meta
-
-### NEXT TIME ###
-# add LOF
-# run on all data subsets.
-# then calculate reflectance and uncertainties
+# generate bib file
+knitr::write_bib(c(.packages()), "temp/packages.bib")
