@@ -37,9 +37,9 @@ res.path1 <- "/output/"
 dat.path1 <- "/data/raw/"
 
 # select folder w/ data subset
-ss <- "AT_pubescens_2"
-ss <- "AT_robur_2"
-# ss <- "CH_pubescens_2"
+# ss <- "AT_pubescens_2"
+# ss <- "AT_robur_2"
+ss <- "CH_pubescens_2"
 # ss <- "CH_robur_2"
 # ss <- "CH_robur_3"
 
@@ -115,13 +115,6 @@ outliers_vis_1 <- inspect_by_type(spec_df)
 # close device
 dev.off()
 
-# at pub: rm B20
-# at rob: all clear
-# ch pub: 8E3 too low around 1000 in BRL, manual rm:
-
-# ch rob 2: all clear.. some WR?
-# ch rob 3: check BRL high in 1000 but seems otherwise ok so leave it
-
 # manual check: plot by scan type, e.g. "BRL"
 # tst <- spec_df |>
 #   filter(type == "BRL")
@@ -169,7 +162,7 @@ dev.off()
 
 #### CALCULATE REFLECTANCE AND ABSOLUTE UNCERTAINTY ####
 # Calculation of Reflectance follows this paper: https://doi.org/10.1080/01431169208904118
-# Calculation of Absolute Uncertainty follows this paper: https://doi.org/10.1080/01431169208904118
+# Calculation of Absolute Uncertainty follows this paper: https://doi.org/10.1016/j.rse.2021.112601
 
 # enter here the metadata columns for grouping WITHOUT type and sample name
 metadata_cols <- colnames(spec_df[1:12])
@@ -191,7 +184,7 @@ CR_AU_comb <- spec_df |>
     n_scans = n(),
     mean = mean(val, na.rm = TRUE),
     sd = sd(val, na.rm = TRUE),
-    uxi = sd / n_scans,
+    uxi = sd / sqrt(n_scans),
   ) |>
   # pivot again so we have one row for each nm and can calculate AU per nm
   pivot_wider(
@@ -199,13 +192,16 @@ CR_AU_comb <- spec_df |>
     values_from = c(mean, sd, uxi)
   ) |>
   group_by(across(c(metadata_cols, nm))) |>
-  # calculate Reflectancew
+  # calculate Reflectanc
   mutate(CR = (mean_BRL * mean_WR - mean_WRL * mean_BR) / (mean_WR - mean_BR)) |>
   # calculate Absolute Uncertainty
-  mutate(AU = (sqrt(CR / mean_BRL) * uxi_BRL^2) +
-    (sqrt(CR / mean_BR) * uxi_BR^2) +
-    (sqrt(CR / mean_WRL) * uxi_WRL^2) +
-    (sqrt(CR / mean_WR) * uxi_WR^2)) |>
+  mutate(AU = sqrt(
+    (mean_BR * (mean_WRL - mean_BRL) / ((mean_WR-mean_BR)^2))^2 * uxi_WR^2 +
+      (mean_BR/(mean_WR-mean_BR))^2 * uxi_WRL^2 +
+      (mean_WR * (mean_WRL-mean_BRL)/((mean_WR-mean_BR)^2))^2 * uxi_BR^2 +
+      (mean_WR / (mean_WR-mean_BR))^2 * uxi_BRL^2 
+    
+  ))  |>
   # select relevant columns
   select(c(metadata_cols, nm, CR, AU)) |>
   ungroup() |>
@@ -254,12 +250,12 @@ text(x = 500, y = 0.9, labels = "trim", col = "blue")
 # plot absolute uncertainty
 par(new = TRUE)
 plot(as_spectra(subset(AU, select = `350`:`2500`)),
-     ylim = c(0, 0.001),
+     ylim = c(0, 0.01),
      col = "red", axes = FALSE, xlab = "", ylab = "")
 
 axis(side = 4, col = "red", col.axis = "red",
-     at = seq(0, 0.001, by = 0.0002),
-     labels = format(seq(0, 0.001, by = 0.0002), scientific = FALSE),
+     at = seq(0, 0.01, by = 0.002),
+     labels = format(seq(0, 0.01, by = 0.002), scientific = FALSE),
      las = 1)
 
 mtext("Absolute Uncertainty [no unit]", side = 4, line = 4, col = "red")
