@@ -2,7 +2,7 @@
 ### This script imports the raw data of spectral measurements, adds metadata,
 ### checks for outliers, calculates uncertainties and reflectance.
 ### Established 2024-08-15
-### Last Update 2024-09-17
+### Last Update 2024-09-24
 ### Author: Simone McNamara
 
 #### SETUP ####
@@ -37,11 +37,11 @@ res.path1 <- "/output/"
 dat.path1 <- "/data/raw/"
 
 # select folder w/ data subset
-# ss <- "AT_pubescens_2"
-# ss <- "AT_robur_2"
+ss <- "AT_pubescens_2"
+ss <- "AT_robur_2"
 ss <- "CH_pubescens_2"
-# ss <- "CH_robur_2"
-# ss <- "CH_robur_3"
+ss <- "CH_robur_2"
+ss <- "CH_robur_3"
 
 # select species
 if (str_detect(ss, "pubescens")) {
@@ -250,12 +250,12 @@ text(x = 500, y = 0.9, labels = "trim", col = "blue")
 # plot absolute uncertainty
 par(new = TRUE)
 plot(as_spectra(subset(AU, select = `350`:`2500`)),
-     ylim = c(0, 0.01),
+     ylim = c(0, 0.1),
      col = "red", axes = FALSE, xlab = "", ylab = "")
 
 axis(side = 4, col = "red", col.axis = "red",
-     at = seq(0, 0.01, by = 0.002),
-     labels = format(seq(0, 0.01, by = 0.002), scientific = FALSE),
+     at = seq(0, 0.1, by = 0.02),
+     labels = format(seq(0, 0.1, by = 0.02), scientific = FALSE),
      las = 1)
 
 mtext("Absolute Uncertainty [no unit]", side = 4, line = 4, col = "red")
@@ -323,3 +323,4 @@ write_csv(AU_outliers_rm,
 
 # generate bib file
 knitr::write_bib(c(.packages()), "temp/packages.bib")
+
