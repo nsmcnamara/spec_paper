@@ -160,6 +160,15 @@ outliers_lof <- detect_lof_outliers(spec_df, lof_threshold = 2, k = n_leaf_scans
 # close device
 dev.off()
 
+# for AT_robur: remove D_11
+# spec_df <- subset(spec_df, !(sample_name %in% outliers_lof$sample_name))
+# for CH_pubescens: remove 9_C_2
+# spec_df <- subset(spec_df, !(sample_name %in% outliers_lof$sample_name))
+# for CH robur 3: remove 27_G_3 all, 38_G_2 single scan
+# spec_df <- subset(spec_df, !(sample_name %in% outliers_lof$sample_name))
+# spec_df <- spec_df |>
+#   filter(planting_location != "27_G_3")
+
 #### CALCULATE REFLECTANCE AND ABSOLUTE UNCERTAINTY ####
 # Calculation of Reflectance follows this paper: https://doi.org/10.1080/01431169208904118
 # Calculation of Absolute Uncertainty follows this paper: https://doi.org/10.1016/j.rse.2021.112601
@@ -186,6 +195,8 @@ CR_AU_comb <- spec_df |>
     sd = sd(val, na.rm = TRUE),
     uxi = sd / sqrt(n_scans),
   ) |>
+  # drop n_scans: if we remove a scan based on outlier analysis, it will produce different values and result in NA
+  select(-n_scans) |>
   # pivot again so we have one row for each nm and can calculate AU per nm
   pivot_wider(
     names_from = type,
@@ -303,13 +314,45 @@ all_outliers <- bind_rows(
   outliers_vis_2 |> select(c("outlier_type", metadata_cols))
 )
 
+# for AT pubescens: B20, additionally inspect E_10, H_29: both seem ok, do not remove
+# all_outliers <- all_outliers |>
+#   filter(planting_location == "B_20")
+
+# for AT robur: remove single scan for D_11, additionally inspect C_7, D_26, E_10: all seem ok, do not remove
+all_outliers <- all_outliers |>
+  filter(planting_location == "D_11")
+
+# for CH pubescens: remove single scan for 9_C_2, additionally inspect 10_D_1, 3_A_3, 8_E_3: remove 10_D_1, 8_E_3
+all_outliers <- all_outliers |>
+  filter(planting_location == "10_D_1" | planting_location == "8_E_3" | planting_location == "9_C_2")
+
+# for CH robur 2: remove single scans for 19_B_2, 21_I_2
+
+# for CH robur 3: remove single scans for 38_G_2, all for 27_G_3, 27_F_1
+all_outliers <- all_outliers |>
+  filter(planting_location == "38_G_2" | planting_location == "27_G_3" | planting_location == "27_F_1")
+
+plot(as_spectra(subset(CR_trim, select = `401`:`2500`)),
+     main = paste0(ss)
+)
+plot(as_spectra(subset(CR_trim, select = `401`:`2500`, planting_location == "27_F_1")),
+     col = "red", add = TRUE
+)
+
+
+
 # save combined outlier df
 write_csv(all_outliers, 
           file = paste0(getwd(), "/data/processed/", species, "_", ss, "_outliers.csv"))
 
 # remove outliers from data
+all_outliers <- all_outliers |>
+  filter(planting_location != "38_G_2")
+
 CR_outliers_rm <- anti_join(CR_trim, all_outliers, by = "planting_location")
 AU_outliers_rm <- anti_join(AU_trim, all_outliers, by = "planting_location")
+
+
 
 # save new and processed data
 write_csv(CR_outliers_rm, 
@@ -318,7 +361,20 @@ write_csv(CR_outliers_rm,
 write_csv(AU_outliers_rm, 
           file = paste0(getwd(), "/data/processed/", species, "_", ss, "_AU_outliers_rm.csv"))
 
+### Combining Species ###
+at_pub <- read_csv("data/processed/Q.pubescens_AT_pubescens_2_CR_outliers_rm.csv")
+ch_pub <- read_csv("data/processed/Q.pubescens_CH_pubescens_2_CR_outliers_rm.csv")
 
+at_rob <- read_csv("data/processed/Q.robur_AT_robur_2_CR_outliers_rm.csv")
+ch_rob <- read_csv("data/processed/Q.robur_CH_robur_2_CR_outliers_rm.csv")
+
+pub_spectra <- rbind(at_pub, ch_pub)
+write_csv(pub_spectra, 
+          file = paste0(getwd(), "/data/processed/", "pub_spectra.csv"))
+
+rob_spectra <- rbind(at_rob, ch_rob)
+write_csv(rob_spectra, 
+          file = paste0(getwd(), "/data/processed/", "rob_spectra.csv"))
 
 
 # generate bib file
